@@ -40,23 +40,27 @@ class PROTACDataset(Dataset):
         return item
     
 
-def PROTACLoader(root='data/PROTAC-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8):
-    protac = PROTACData(root, 'protac')
-    with open(f'{root}/processed/e3_ligase.pt', 'rb') as f:
+def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8):
+    protac = PROTACData(root, name=name) # name: raw file name
+    with open(f'{root}/processed/{name}/e3_ligase.pt', 'rb') as f:
         e3_ligase = torch.load(f)
-    with open(f'{root}/processed/poi.pt', 'rb') as f:
+    with open(f'{root}/processed/{name}/poi.pt', 'rb') as f:
         poi = torch.load(f)
-    with open(f'{root}/processed/label.pt', 'rb') as f:
+    with open(f'{root}/processed/{name}/label.pt', 'rb') as f:
         label = torch.load(f)
 
     dataset = PROTACDataset(protac, e3_ligase, poi, label)
 
     train_size = int(train_ratio * len(dataset))
     test_size = len(dataset) - train_size
-    print('Cleaned Dataset: ')
-    print('Total size: ', len(dataset))
-    print('Train size: ', train_size)
-    print('Test size: ', test_size)
+    if train_ratio > 0.0:
+        print('Cleaned Dataset: ')
+        print('Total size: ', len(dataset))
+        print('Train size: ', train_size)
+        print('Test size: ', test_size)
+    else:
+        print('Test Dataset: ')
+        print('Total size: ', len(dataset))
 
     if train_size == 0:
         test_loader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)

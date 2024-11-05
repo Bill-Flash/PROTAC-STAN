@@ -166,16 +166,31 @@ def data_to_graph(raw_data, with_hydrogen: bool = False, kekulize: bool = False)
 class PROTACData(InMemoryDataset):
     """
     PyTorch Geometric dataset for processing PROTAC data.
+    
+    Args:
+
+    root (str): Root directory.
+    name (str): Name of the raw file.
     """
 
     def __init__(self, root, name, transform=None, pre_transform=None):
+        self.root = root
+        self.name = name
+        self.raw_files = [osp.join(root, f'{name}.csv')]
         super(PROTACData, self).__init__(root, transform, pre_transform)
-        if name == 'protac':
-            self.data, self.slices = torch.load(self.processed_paths[0])
+        self.data, self.slices = torch.load(self.processed_paths[0])
+        
+    # @property
+    # def raw_dir(self):
+    #     return self.root
 
     @property
+    def processed_dir(self):
+        return osp.join(self.root, 'processed', self.name)
+    
+    @property
     def raw_file_names(self):
-        return [osp.join(self.root, 'protac-fine.csv')]
+        return self.raw_files
 
     @property
     def processed_file_names(self):
@@ -187,6 +202,7 @@ class PROTACData(InMemoryDataset):
         ]
 
     def process(self):
+        print(self.processed_dir)
         protac_df = pd.read_csv(self.raw_file_names[0])
 
         # standardize the data
@@ -230,6 +246,6 @@ class PROTACData(InMemoryDataset):
 
 if __name__ == '__main__':
     root = 'data/PROTAC-fine'
-    dataset = PROTACData(root='data/PROTAC-fine', name='protac')
+    dataset = PROTACData(root=root, name='protac-fine')
     print("Dataset info:")
     print("Number of samples:", len(dataset))
