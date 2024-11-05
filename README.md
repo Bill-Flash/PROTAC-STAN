@@ -10,16 +10,16 @@ This study introduces *PROTAC-STAN*, a **structure-informed deep ternary attenti
 
 ## Installation
 
-1. Create Conda enviroment
+1. Create Conda environment
 ``` shell
 conda create -n PROTAC-STAN python=3.11.5
 conda activate PROTAC-STAN
 ```
-1. Install Pytorch
+2. Install Pytorch
 ```shell
 conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 pytorch-cuda=11.8 -c pytorch -c nvidia
 ```
-1. Install other essential packages
+3. Install other essential packages
 ```shell
 rdkit
 pyg
@@ -36,7 +36,7 @@ toml
 The original data can be accessed at [PROTAC-DB](http://cadd.zju.edu.cn/protacdb/). 
 
 > [!NOTE]
-> We also provide the PROTAC-DB 2.0 at `data/PROTAC-DB2` folder for your convenience.
+> We also provide the PROTAC-DB 2.0 in `data/PROTAC-DB2` folder for your convenience.
 
 ### PROTAC-fine
 We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.com/nar/article/51/D1/D1367/6775390) and construct a refined PROTAC dataset named PROTAC-fine. The data are stored in `data/PROTAC-fine` folder.
@@ -80,8 +80,7 @@ To train the PROTAC-STAN model from scratch, run the following script:
 ```shell
 python main.py
 ```
-Evaluation results of PROTAC-STAN and baselines on test set
-considering data leakage
+Evaluation results of PROTAC-STAN and baselines on test set considering data leakage:
 
 <img src="assets/results.png" alt="Evaluation results of PROTAC-STAN and baselines on test set considering data leakage" width="70%">
 
