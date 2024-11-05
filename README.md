@@ -8,29 +8,6 @@ This study introduces *PROTAC-STAN*, a **structure-informed deep ternary attenti
 
 <img src="assets/PROTAC-STAN.png" alt="Overview of PROTAC-STAN" width="100%">
 
-## Installation
-
-1. Create Conda environment
-``` shell
-conda create -n PROTAC-STAN python=3.11.5
-conda activate PROTAC-STAN
-```
-2. Install Pytorch
-```shell
-conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 pytorch-cuda=11.8 -c pytorch -c nvidia
-```
-3. Install other essential packages
-```shell
-rdkit
-pyg
-pandas
-toml
-...
-```
-
-> [!TIP]
-> See `protac-stan.yml` for full requriements.
-
 ## Datasets
 ### PROTAC-DB
 The original data can be accessed at [PROTAC-DB](http://cadd.zju.edu.cn/protacdb/). 
@@ -70,6 +47,29 @@ We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.co
 │   └── README.md
 ├── prepare_data.ipynb
 ```
+
+## Installation
+
+1. Create Conda environment
+``` shell
+conda create -n PROTAC-STAN python=3.11.5
+conda activate PROTAC-STAN
+```
+2. Install Pytorch
+```shell
+conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+```
+3. Install other essential packages
+```shell
+rdkit
+pyg
+pandas
+toml
+...
+```
+
+> [!TIP]
+> See `protac-stan.yml` for full requriements.
 
 ## Training
 
