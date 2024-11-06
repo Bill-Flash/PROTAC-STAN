@@ -4,7 +4,7 @@ This is the official codebase of the paper: "Interpretable PROTAC degradation pr
 
 ## Overview
 
-This study introduces *PROTAC-STAN*, a **structure-informed deep ternary attention network (STAN)** framework for interpretable PROTAC degradation prediction. PROTAC-STAN represents PROTAC molecules across **atom, molecule, and property hierarchies** and incorporates **structure information** for POIs and E3 ligases using a protein language model infused with structural data. Furthermore, it simulates interactions among three entities via a **novel ternary attention network** tailored for the PROTAC system, providing unprecedented insights into the degradation mechanism.
+This study introduces *PROTAC-STAN*, a **structure-informed deep ternary attention network (STAN)** framework for interpretable PROTAC degradation prediction. It's the first study to coherently model the three-body interactions of PROTAC therapeutics with a tailored deep learning architecture. *PROTAC-STAN* represents PROTAC molecules across **atom, molecule, and property hierarchies** and incorporates **structure information** for POIs and E3 ligases using a protein language model infused with structural data. Furthermore, it simulates interactions among three entities via a **novel ternary attention network** tailored for the PROTAC system, providing unprecedented insights into the degradation mechanism.
 
 <img src="assets/PROTAC-STAN.png" alt="Overview of PROTAC-STAN" width="100%">
 
@@ -52,8 +52,8 @@ We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.co
 
 1. Create Conda environment
 ``` shell
-conda create -n PROTAC-STAN python=3.11.5
-conda activate PROTAC-STAN
+conda create -n protac-stan python=3.11.5
+conda activate protac-stan
 ```
 2. Install Pytorch
 ```shell

@@ -1,0 +1,22 @@
+# data
+saved_models/202*
+
+# testing
+.vscode/
+debug*
+
+# cache
+__pycache__
+
+# log
+wandb
+*.log
+screenlog.*
+
+# exclude
+esm*.pt
+esm*.pth
+
+data/custom/*.pkl
+
+data/PROTAC-fine/processed/toy/
