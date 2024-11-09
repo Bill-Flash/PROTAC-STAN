@@ -1,6 +1,6 @@
 # PROTAC-STAN
 
-This is the official codebase of the paper: "Interpretable PROTAC degradation prediction with structure-informed deep ternary attention framework"
+This is the official codebase of the paper: ["Interpretable PROTAC degradation prediction with structure-informed deep ternary attention framework"](https://www.biorxiv.org/content/10.1101/2024.11.05.622005v1)
 
 ## Overview
 
@@ -111,3 +111,16 @@ You may use attention maps to take further anaysis, here are our examples:
 </details>
 
 ## Citation
+```tex
+@misc{chen2024Interpretable,
+  title = {Interpretable {{PROTAC}} Degradation Prediction with Structure-Informed Deep Ternary Attention Framework},
+  author = {Chen, Zhenglu and Gu, Chunbin and Tan, Shuoyan and Wang, Xiaorui and Li, Yuquan and He, Mutian and Lu, Ruiqiang and Sun, Shijia and Hsieh, Chang-Yu and Yao, Xiaojun and Liu, Huanxiang and Heng, Pheng-Ann},
+  year = {2024},
+  primaryclass = {New Results},
+  pages = {2024.11.05.622005},
+  doi = {10.1101/2024.11.05.622005},
+  urldate = {2024-11-09},
+  archiveprefix = {bioRxiv},
+  chapter = {New Results}
+}
+```
