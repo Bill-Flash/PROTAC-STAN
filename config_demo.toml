@@ -1,0 +1,32 @@
+[model]
+desc = 'model parameters'
+type = "PROTAC-STAN-Demo"
+seed = 21332
+
+[model.protac]
+feature = 146
+embed = 64
+hidden = 128
+edge_dim = 3
+
+[model.protein]
+embed = 1280
+hidden = 128
+out_dim = 64
+
+[model.tan]
+in_dims = [1, 1, 1]
+heads = 2
+
+[model.clf]
+embed = 192
+hidden = 64
+class = 2
+
+
+[train]
+desc = 'train parameters'
+learning_rate = 0.0005
+batch_size = 4
+num_epochs = 50
+train_ratio = 0.8

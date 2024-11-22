@@ -1,5 +1,8 @@
 # PROTAC-STAN
 
+![stars](https://img.shields.io/github/stars/PROTACs/PROTAC-STAN) 
+![license](https://img.shields.io/github/license/PROTACs/PROTAC-STAN.svg) 
+
 This is the official codebase of the paper: ["Interpretable PROTAC degradation prediction with structure-informed deep ternary attention framework"](https://www.biorxiv.org/content/10.1101/2024.11.05.622005v1)
 
 ## Overview
@@ -19,6 +22,16 @@ The original data can be accessed at [PROTAC-DB](http://cadd.zju.edu.cn/protacdb
 We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.com/nar/article/51/D1/D1367/6775390) and construct a refined PROTAC dataset named PROTAC-fine. The data are stored in `data/PROTAC-fine` folder.
 
 ## Directory instructions
+
+### Demo
+
+```txt
+.
+├── config_demo.toml
+├── data
+│   └── demo
+├── demo.ipynb
+```
 
 ### Training and inference
 
@@ -48,7 +61,25 @@ We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.co
 ├── prepare_data.ipynb
 ```
 
-## Installation
+## Demo
+
+We provide PROTAC-STAN running demo through a Jupyter notebook `demo.ipynb`. Note it is based on a small demo dataset of PROTAC-fine. This demo only takes about 3 minutes to complete the whole pipeline. For running PROTAC-STAN on the full dataset, we advise GPU ram >= 8GB and CPU ram >= 16GB.
+
+## System requirements
+
+<!-- ![Linux](https://img.shields.io/badge/Linux-FCC624?style=plastic&logo=linux&logoColor=black) -->
+
+PROTAC-STAN has been tested on **Linux** operating systems (Ubuntu 20.04.1). 
+
+Python Dependencies:
+- Python (version >= 3.11.5)
+- PyTorch (version >= 2.1.0)
+- RDKit (version >= 2023.9.2)
+- pyg (version >= 2.5.1)
+
+## Installation guide
+
+It normally takes about 10 minutes to install on a normal desktop computer (based on your network).
 
 1. Create Conda environment
 ``` shell
@@ -71,7 +102,7 @@ toml
 > [!TIP]
 > See `protac-stan.yml` for full requriements.
 
-## Training
+## Training to reproduce results
 
 We have prepared the PROTAC-fine dataset in directory `data/PROTAC-fine`. 
 
@@ -84,7 +115,7 @@ Evaluation results of PROTAC-STAN and baselines on test set considering data lea
 
 <img src="assets/results.png" alt="Evaluation results of PROTAC-STAN and baselines on test set considering data leakage" width="70%">
 
-## Inference
+## Inference on your data
 
 `inference.py` leverage PROTAC-STAN as a powerful tool to perform interpretable PROTAC degradation prediction.
 
@@ -95,7 +126,7 @@ Evaluation results of PROTAC-STAN and baselines on test set considering data lea
 python inference.py --root 'data/custom' --name 'custom'
 ```
 
-You may use attention maps to take further anaysis, here are our examples:
+You may use `--save_att` argument to save attention maps to take further anaysis, here are our examples:
 
 > [!TIP]
 > You may use Python packages like [matplotlib](https://matplotlib.org/stable/), [RDKit](https://www.rdkit.org/), Visualization software like [Maestro](https://www.schrodinger.com/platform/products/maestro/), [PyMOL](https://www.pymol.org/) and so on.
