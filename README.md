@@ -92,6 +92,7 @@ conda activate protac-stan
 2. Install Pytorch
 ```shell
 conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+conda install numpy==1.26.4
 ```
 3. Install other essential packages
 ```shell
@@ -100,7 +101,9 @@ pip install rdkit==2023.9.2
 pip install pandas==2.1.1
 pip install toml==0.10.2
 pip install wandb
-...
+# [Optional] Install torch-scatter to accelerate pyg computing
+wget https://data.pyg.org/whl/torch-2.1.0%2Bcu118/torch_scatter-2.1.2%2Bpt21cu118-cp311-cp311-linux_x86_64.whl
+pip install torch_scatter-2.1.2+pt21cu118-cp311-cp311-linux_x86_64.whl
 ```
 4. Download repository
 ```shell
