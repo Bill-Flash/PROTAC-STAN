@@ -64,7 +64,9 @@ We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.co
 
 ## Demo
 
-We provide PROTAC-STAN running demo through a Jupyter notebook `demo.ipynb` [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PROTACs/PROTAC-STAN/blob/main/demo.ipynb). Note it is based on a small demo dataset of PROTAC-fine. This demo only takes about 3 minutes to complete the whole pipeline. For running PROTAC-STAN on the full dataset, we advise GPU ram >= 8GB and CPU ram >= 16GB.
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PROTACs/PROTAC-STAN/blob/main/demo.ipynb)
+
+We provide PROTAC-STAN running demo through a Jupyter notebook `demo.ipynb`. Note it is based on a small demo dataset of PROTAC-fine. This demo only takes about 5 minutes to complete the whole pipeline. For running PROTAC-STAN on the full dataset, we advise GPU ram >= 8GB and CPU ram >= 16GB.
 
 ## System requirements
 
@@ -93,11 +95,17 @@ conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 pytorch-cuda=
 ```
 3. Install other essential packages
 ```shell
-rdkit
-pyg
-pandas
-toml
+pip install torch_geometric==2.5.1
+pip install rdkit==2023.9.2
+pip install pandas==2.1.1
+pip install toml==0.10.2
+pip install wandb
 ...
+```
+4. Download repository
+```shell
+git clone https://github.com/PROTACs/PROTAC-STAN.git
+cd PROTAC-STAN
 ```
 
 > [!TIP]
