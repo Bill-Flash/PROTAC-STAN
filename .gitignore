@@ -17,6 +17,4 @@ screenlog.*
 esm*.pt
 esm*.pth
 
-data/custom/*.pkl
-
-data/PROTAC-fine/processed/toy/
+demo_model_state_dict.pt
