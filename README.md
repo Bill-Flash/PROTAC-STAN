@@ -2,6 +2,7 @@
 
 ![stars](https://img.shields.io/github/stars/PROTACs/PROTAC-STAN) 
 ![license](https://img.shields.io/github/license/PROTACs/PROTAC-STAN.svg) 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PROTACs/PROTAC-STAN/blob/main/demo.ipynb)
 
 This is the official codebase of the paper: ["Interpretable PROTAC degradation prediction with structure-informed deep ternary attention framework"](https://www.biorxiv.org/content/10.1101/2024.11.05.622005v1)
 
@@ -30,7 +31,7 @@ We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.co
 ├── config_demo.toml
 ├── data
 │   └── demo
-├── demo.ipynb
+└── demo.ipynb
 ```
 
 ### Training and inference
@@ -58,12 +59,12 @@ We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.co
 │   ├── get_embed_s.py
 │   ├── model
 │   └── README.md
-├── prepare_data.ipynb
+└──  prepare_data.ipynb
 ```
 
 ## Demo
 
-We provide PROTAC-STAN running demo through a Jupyter notebook `demo.ipynb`. Note it is based on a small demo dataset of PROTAC-fine. This demo only takes about 3 minutes to complete the whole pipeline. For running PROTAC-STAN on the full dataset, we advise GPU ram >= 8GB and CPU ram >= 16GB.
+We provide PROTAC-STAN running demo through a Jupyter notebook `demo.ipynb` [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PROTACs/PROTAC-STAN/blob/main/demo.ipynb). Note it is based on a small demo dataset of PROTAC-fine. This demo only takes about 3 minutes to complete the whole pipeline. For running PROTAC-STAN on the full dataset, we advise GPU ram >= 8GB and CPU ram >= 16GB.
 
 ## System requirements
 
