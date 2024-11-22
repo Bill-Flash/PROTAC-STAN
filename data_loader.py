@@ -15,7 +15,7 @@ def collate_fn(data_list):
     batch['protac'] =  Batch.from_data_list(protac)
     batch['e3_ligase'] = torch.stack(e3_ligase)
     batch['poi'] = torch.stack(poi)
-    batch['label'] = torch.stack(label)
+    batch['label'] = torch.stack(label) if label[0] is not None else None
 
     return batch
 
@@ -25,17 +25,18 @@ class PROTACDataset(Dataset):
         self.protac = protac
         self.e3_ligase = e3_ligase
         self.poi = poi
-        self.label = label
+        if label is not None:
+            self.label = label
 
     def __len__(self):
-        return len(self.label)
+        return len(self.protac)
 
     def __getitem__(self, index):
         item = {
             'protac': self.protac[index],
             'e3_ligase': self.e3_ligase[index],
             'poi': self.poi[index],
-            'label': self.label[index]
+            'label': self.label[index] if hasattr(self, 'label') else None
         }
         return item
     
@@ -46,8 +47,11 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
         e3_ligase = torch.load(f)
     with open(f'{root}/processed/{name}/poi.pt', 'rb') as f:
         poi = torch.load(f)
-    with open(f'{root}/processed/{name}/label.pt', 'rb') as f:
-        label = torch.load(f)
+    try:
+        with open(f'{root}/processed/{name}/label.pt', 'rb') as f:
+            label = torch.load(f)
+    except:
+        label = None
 
     dataset = PROTACDataset(protac, e3_ligase, poi, label)
 

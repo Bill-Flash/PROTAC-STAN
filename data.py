@@ -236,6 +236,8 @@ class PROTACData(InMemoryDataset):
         torch.save(poi_data_list, self.processed_paths[2])
 
         # label
+        if 'label' not in protac_df.columns:
+            return
         label = protac_df['label'].astype(int).to_list()
         label = torch.tensor(label)
         torch.save(label, self.processed_paths[3])

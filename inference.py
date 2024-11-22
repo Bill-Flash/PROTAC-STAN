@@ -65,13 +65,14 @@ def main():
 
     model = PROTAC_STAN(model_cfg)
     path = 'saved_models/protac-stan.pt'
+    print(f'Loading model from {path}...')
     state_dict = torch.load(path)
     model.load_state_dict(state_dict)
     print(model)
     
     parser = argparse.ArgumentParser(description='PROTAC-STAN Inference')
-    parser.add_argument('--root', type=str, default='data/PROTAC-fine', help='Path to the data directory')
-    parser.add_argument('--name', type=str, default='toy', help='Raw file name without extension')
+    parser.add_argument('--root', type=str, default='data/custom', help='Path to the data directory')
+    parser.add_argument('--name', type=str, default='custom', help='Raw file name without extension')
     parser.add_argument('--save_att', action='store_true', help='Whether to save attention maps, might consume a lot of memory')
 
     args = parser.parse_args()
