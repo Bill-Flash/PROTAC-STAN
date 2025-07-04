@@ -59,6 +59,24 @@ We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.co
 └──  prepare_data.ipynb
 ```
 
+### Pretrained models
+
+```txt
+# PROTAC-STAN
+.
+└── saved_models
+    └── protac-stan.pt
+
+# ESM-S
+.
+└── esm_embed
+    └── model
+        ├── esm2_t33_650M_UR50D.pt
+        └── esm_650m_s.pth
+```
+
+Download the ESM model weights `esm2_t33_650M_UR50D.pt` from [here](https://github.com/facebookresearch/esm), and the structure-informed ESM model weights `esm_650m_s.pth` from [here](https://github.com/DeepGraphLearning/esm-s).
+
 ## Demo
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PROTACs/PROTAC-STAN/blob/main/demo.ipynb)
@@ -76,6 +94,8 @@ Python Dependencies:
 - PyTorch (version >= 2.1.0)
 - RDKit (version >= 2023.9.2)
 - pyg (version >= 2.5.1)
+
+The full requirements are provided in `protac-stan.yml`
 
 ## Installation guide
 
