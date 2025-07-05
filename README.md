@@ -17,7 +17,7 @@ This study introduces *PROTAC-STAN*, a **structure-informed deep ternary attenti
 The original data can be accessed at [PROTAC-DB](http://cadd.zju.edu.cn/protacdb/). 
 
 ### PROTAC-fine
-We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.com/nar/article/51/D1/D1367/6775390) and construct a refined PROTAC dataset named PROTAC-fine. The data are stored in `data/PROTAC-fine` folder.
+We enrich degradation information to the [PROTAC-DB 2.0](https://academic.oup.com/nar/article/51/D1/D1367/6775390) and construct a refined PROTAC dataset named PROTAC-fine. The data are stored in `data/PROTAC-fine` folder. The data cleaning script is provided in `clean.ipynb`.
 
 ## Directory instructions
 
