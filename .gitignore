@@ -18,3 +18,5 @@ esm*.pt
 esm*.pth
 
 demo_model_state_dict.pt
+
+data/protac.csv
