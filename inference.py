@@ -38,7 +38,7 @@ def test(model, test_loader, device, save_att=False):
             # label = data['label'].to(device)
 
             outputs, atts = model(protac_data, e3_ligase_data, poi_data, mode='eval')
-            atts, predicted = torch.max(outputs.data, dim=1)
+            _, predicted = torch.max(outputs.data, dim=1)
             
 
             predictions.extend(predicted.cpu().numpy())
