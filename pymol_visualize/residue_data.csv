@@ -1,0 +1,12 @@
+chain,resi,role
+C,101,weighted
+D,135,weighted
+D,106,weighted
+D,104,weighted
+C,76,weighted
+D,140,interacting+weighted
+D,88,interacting+weighted
+C,110,interacting
+C,111,interacting
+C,115,interacting
+C,98,interacting
