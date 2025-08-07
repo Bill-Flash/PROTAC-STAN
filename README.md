@@ -172,6 +172,8 @@ You may use `--save_att` argument to save attention maps to take further anaysis
 <img src="assets/complex.png" alt="Molecule and complex visualization" width="100%">
 </details>
 
+We also provide a simple PyMOL script `pymol_visualize.py` to assist with 3D visualization, see [here](https://github.com/PROTACs/PROTAC-STAN/tree/main/pymol_visualize).
+
 ## Citation
 ```tex
 @misc{chen2024Interpretable,
