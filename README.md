@@ -4,7 +4,7 @@
 ![license](https://img.shields.io/github/license/PROTACs/PROTAC-STAN.svg) 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/PROTACs/PROTAC-STAN/blob/main/demo.ipynb)
 
-This is the official codebase of the paper: ["Interpretable PROTAC degradation prediction with structure-informed deep ternary attention framework"](https://www.biorxiv.org/content/10.1101/2024.11.05.622005v1)
+This is the official codebase of the paper: ["Interpretable PROTAC degradation prediction with structure-informed deep ternary attention framework"](https://doi.org/10.1002/advs.202508138)
 
 ## Overview
 
@@ -176,15 +176,15 @@ We also provide a simple PyMOL script `pymol_visualize.py` to assist with 3D vis
 
 ## Citation
 ```tex
-@misc{chen2024Interpretable,
-  title = {Interpretable {{PROTAC}} Degradation Prediction with Structure-Informed Deep Ternary Attention Framework},
+@article{chen2025Interpretable,
+  title = {Interpretable {{PROTAC Degradation Prediction With Structure}}-{{Informed Deep Ternary Attention Framework}}},
   author = {Chen, Zhenglu and Gu, Chunbin and Tan, Shuoyan and Wang, Xiaorui and Li, Yuquan and He, Mutian and Lu, Ruiqiang and Sun, Shijia and Hsieh, Chang-Yu and Yao, Xiaojun and Liu, Huanxiang and Heng, Pheng-Ann},
-  year = {2024},
-  primaryclass = {New Results},
-  pages = {2024.11.05.622005},
-  doi = {10.1101/2024.11.05.622005},
-  urldate = {2024-11-09},
-  archiveprefix = {bioRxiv},
-  chapter = {New Results}
+  year = {2025},
+  month = sep,
+  journal = {Advanced Science},
+  pages = {e08138},
+  issn = {2198-3844, 2198-3844},
+  doi = {10.1002/advs.202508138},
+  langid = {english},
 }
 ```
