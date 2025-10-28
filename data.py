@@ -205,6 +205,28 @@ class PROTACData(InMemoryDataset):
         print(self.processed_dir)
         protac_df = pd.read_csv(self.raw_file_names[0])
 
+        # Load ESM map to check which Uniprot IDs are available
+        # 改进的数据过滤策略
+        # 现在代码会同时过滤掉以下情况的样本：
+        # Uniprot列为NaN的样本
+        # E3 ligase Uniprot列为NaN的样本
+        # Uniprot ID不在esm_map中的样本
+        # E3 ligase Uniprot ID不在esm_map中的样本
+        # label列为NaN的样本 ← 新增
+        with open(osp.join(self.root, 'esm_s_map.pkl'), 'rb') as f:
+            esm_map = pickle.load(f)
+        
+        # Filter out rows with NaN values and ensure Uniprot IDs exist in ESM map
+        # Also drop rows where label is NaN
+        valid_mask = (protac_df['Uniprot'].notna() & 
+                     protac_df['E3 ligase Uniprot'].notna() &
+                     protac_df['Uniprot'].isin(esm_map.keys()) &
+                     protac_df['E3 ligase Uniprot'].isin(esm_map.keys()) &
+                     protac_df['label'].notna())
+        protac_df = protac_df[valid_mask].reset_index(drop=True)
+        
+        print(f"Filtered dataset: {len(protac_df)} valid samples out of {len(pd.read_csv(self.raw_file_names[0]))} total samples")
+
         # standardize the data
         protac_df[columns[1:]] = protac_df[columns[1:]].apply(lambda x: (x - x.mean()) / x.std())
 
@@ -217,9 +239,6 @@ class PROTACData(InMemoryDataset):
 
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
-        
-        with open(osp.join(self.root, 'esm_s_map.pkl'), 'rb') as f:
-            esm_map = pickle.load(f)
 
         # e3 ligase
         e3 = protac_df['E3 ligase Uniprot'].to_list()
@@ -238,6 +257,7 @@ class PROTACData(InMemoryDataset):
         # label
         if 'label' not in protac_df.columns:
             return
+        # Since we already filtered out NaN values, we can directly convert to int
         label = protac_df['label'].astype(int).to_list()
         label = torch.tensor(label)
         torch.save(label, self.processed_paths[3])
