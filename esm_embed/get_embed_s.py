@@ -74,12 +74,27 @@ class PROTACTargets(data.ProteinDataset):
         for uniprot, seq in p_map.items():
             protein_seqs.append((uniprot, seq))
         
+        # Valid amino acid characters (standard 20 amino acids)
+        valid_aa = set('ACDEFGHIKLMNPQRSTVWY')
+        
         self.data = []
         if verbose:
             protein_seqs = tqdm(protein_seqs, "Constructing proteins from sequences")
         for uniprot, seq in protein_seqs:
-            protein = data.Protein.from_sequence(seq, **kwargs)
-            self.data.append((uniprot, protein))
+            # Check if sequence contains only valid amino acids
+            if not set(seq).issubset(valid_aa):
+                invalid_chars = set(seq) - valid_aa
+                if verbose:
+                    print(f"Skipping {uniprot}: contains invalid amino acid characters {invalid_chars}")
+                continue
+            
+            try:
+                protein = data.Protein.from_sequence(seq, **kwargs)
+                self.data.append((uniprot, protein))
+            except Exception as e:
+                if verbose:
+                    print(f"Skipping {uniprot}: {str(e)}")
+                continue
 
     def get_item(self, index):
         uniprot, protein = self.data[index]
