@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import toml
 import torch
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
 from data_loader import PROTACLoader
 from model import PROTAC_STAN
@@ -27,7 +28,9 @@ def test(model, test_loader, device, save_att=False):
     model.eval()
 
     predictions = []
+    labels = []
     att_maps = []
+    has_labels = False
 
     with torch.no_grad():
 
@@ -35,7 +38,13 @@ def test(model, test_loader, device, save_att=False):
             protac_data = data['protac'].to(device)
             e3_ligase_data = data['e3_ligase'].to(device)
             poi_data = data['poi'].to(device)
-            # label = data['label'].to(device)
+            label = data['label']
+            
+            # Check if labels exist
+            if label is not None:
+                has_labels = True
+                label = label.to(device)
+                labels.extend(label.cpu().numpy())
 
             outputs, atts = model(protac_data, e3_ligase_data, poi_data, mode='eval')
             _, predicted = torch.max(outputs.data, dim=1)
@@ -47,8 +56,20 @@ def test(model, test_loader, device, save_att=False):
 
     results = {
         'predictions': predictions,
-        'att_maps': att_maps
+        'att_maps': att_maps,
+        'has_labels': has_labels
     }
+    
+    # Calculate metrics if labels exist
+    if has_labels:
+        accuracy = accuracy_score(labels, predictions)
+        roc_auc = roc_auc_score(labels, predictions)
+        f1 = f1_score(labels, predictions)
+        
+        results['labels'] = labels
+        results['accuracy'] = accuracy
+        results['roc_auc'] = roc_auc
+        results['f1'] = f1
     
     return results
 
@@ -86,12 +107,36 @@ def main():
     results = test(model, test_loader, device, save_att)
     
     predictions = results['predictions']
+    has_labels = results['has_labels']
+    
     if save_att:
         att_maps = results['att_maps']
         print('Saving attention maps...')
         np.save(f'{root}/{name}_att.npy', att_maps)
+    
+    print('\n' + '='*50)
+    print('Inference Results')
+    print('='*50)
+    print(f'Total samples: {len(predictions)}')
+    print(f'Predictions: {predictions}')
+    
+    if has_labels:
+        labels = results['labels']
+        accuracy = results['accuracy']
+        roc_auc = results['roc_auc']
+        f1 = results['f1']
         
-    print(predictions)
+        print(f'\nTrue labels: {labels}')
+        print('\n' + '-'*50)
+        print('Evaluation Metrics:')
+        print('-'*50)
+        print(f'Accuracy:  {accuracy:.4f} ({100 * accuracy:.2f}%)')
+        print(f'ROC AUC:   {roc_auc:.4f}')
+        print(f'F1 Score:  {f1:.4f}')
+        print('='*50)
+    else:
+        print('\nNo labels found in dataset. Skipping metric calculation.')
+        print('='*50)
 
 
 if __name__ == '__main__':
