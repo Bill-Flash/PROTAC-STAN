@@ -1,6 +1,7 @@
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from torch_geometric.data import Batch
+import pandas as pd
 
 from data import PROTACData
 
@@ -41,7 +42,12 @@ class PROTACDataset(Dataset):
         return item
     
 
-def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8):
+def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8, use_smiles_split=False):
+    """
+    Args:
+        use_smiles_split: 如果为 True，使用 train/test_compound_smiles.csv 进行划分
+                          如果为 False，使用随机划分（原始行为）
+    """
     protac = PROTACData(root, name=name) # name: raw file name
     with open(f'{root}/processed/{name}/e3_ligase.pt', 'rb') as f:
         e3_ligase = torch.load(f)
@@ -55,6 +61,48 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
 
     dataset = PROTACDataset(protac, e3_ligase, poi, label)
 
+    # 使用 SMILES CSV 文件进行划分
+    if use_smiles_split:
+        train_csv_path = f'{root}/train_compound_smiles.csv'
+        test_csv_path = f'{root}/test_compound_smiles.csv'
+        
+        try:
+            train_df = pd.read_csv(train_csv_path)
+            test_df = pd.read_csv(test_csv_path)
+            
+            train_smiles_set = set(train_df['SMILES'].tolist())
+            test_smiles_set = set(test_df['SMILES'].tolist())
+            
+            # 找到匹配的索引
+            train_indices = []
+            test_indices = []
+            
+            for idx in range(len(dataset)):
+                sample_smiles = dataset[idx]['protac'].smiles
+                if sample_smiles in train_smiles_set:
+                    train_indices.append(idx)
+                elif sample_smiles in test_smiles_set:
+                    test_indices.append(idx)
+            
+            train_dataset = Subset(dataset, train_indices) if train_indices else None
+            test_dataset = Subset(dataset, test_indices)
+            
+            print('Using fixed split from CSV files:')
+            if train_dataset:
+                print(f'Train size: {len(train_dataset)}')
+            print(f'Test size: {len(test_dataset)}')
+            
+            # 创建 DataLoader
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn) if train_dataset else None
+            test_loader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
+            
+            return train_loader, test_loader
+            
+        except FileNotFoundError as e:
+            print(f'Warning: Split CSV files not found ({e}), using random split')
+            use_smiles_split = False
+
+    # 原始随机划分逻辑
     train_size = int(train_ratio * len(dataset))
     test_size = len(dataset) - train_size
     if train_ratio > 0.0:

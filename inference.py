@@ -95,14 +95,20 @@ def main():
     parser.add_argument('--root', type=str, default='data/custom', help='Path to the data directory')
     parser.add_argument('--name', type=str, default='custom', help='Raw file name without extension')
     parser.add_argument('--save_att', action='store_true', help='Whether to save attention maps, might consume a lot of memory')
+    parser.add_argument('--use_test_split', action='store_true', help='Use test_compound_smiles.csv to define test set')
 
     args = parser.parse_args()
 
     root = args.root
     name = args.name
     save_att = args.save_att
+    use_test_split = args.use_test_split
 
-    _, test_loader = PROTACLoader(root=root, name=name, batch_size=1, train_ratio=0.0)
+    # 如果使用测试集划分，使用 CSV 文件；否则使用原始逻辑（train_ratio=0.0 表示全部数据）
+    if use_test_split:
+        _, test_loader = PROTACLoader(root=root, name=name, batch_size=1, train_ratio=0.8, use_smiles_split=True)
+    else:
+        _, test_loader = PROTACLoader(root=root, name=name, batch_size=1, train_ratio=0.0)
 
     results = test(model, test_loader, device, save_att)
     
