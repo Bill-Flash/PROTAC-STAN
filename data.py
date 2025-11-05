@@ -122,7 +122,22 @@ def data_to_graph(raw_data, with_hydrogen: bool = False, kekulize: bool = False)
     
     smiles_encoding = trans_smiles(smiles)
     mol_properties = [raw_data[column] for column in columns[1:]]
-    global_feature = smiles_encoding + mol_properties
+    
+    # 解析MACCS Fingerprint
+    maccs_fp = []
+    if 'MACCS_Fingerprint' in raw_data and pd.notna(raw_data.get('MACCS_Fingerprint')):
+        try:
+            fp_str = str(raw_data['MACCS_Fingerprint'])
+            maccs_fp = [int(x) for x in fp_str.split(',')]
+            if len(maccs_fp) != 166:
+                # 如果长度不对，使用全零向量
+                maccs_fp = [0] * 166
+        except:
+            maccs_fp = [0] * 166
+    else:
+        maccs_fp = [0] * 166
+    # 合并所有特征
+    global_feature = smiles_encoding + mol_properties + maccs_fp
     global_feature = torch.tensor(global_feature, dtype=torch.float).view(1, -1)
 
     xs = []
@@ -267,7 +282,7 @@ class PROTACData(InMemoryDataset):
     
 
 if __name__ == '__main__':
-    root = 'data/PROTAC-fine'
-    dataset = PROTACData(root=root, name='protac-fine')
+    root = 'data/protacdb3'
+    dataset = PROTACData(root=root, name='protac_maccs')
     print("Dataset info:")
     print("Number of samples:", len(dataset))

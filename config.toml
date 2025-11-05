@@ -4,7 +4,7 @@ type = "PROTAC-STAN"
 seed = 21332
 
 [model.protac]
-feature = 146
+feature = 312
 embed = 64
 hidden = 128
 edge_dim = 3
