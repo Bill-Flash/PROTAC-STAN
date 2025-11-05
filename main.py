@@ -150,7 +150,7 @@ def main():
     setup_seed(model_cfg['seed'])
     
     wandb.init(
-        mode="disabled",
+        mode="online",
         project='protac-stan',
         config=cfg,
         group=f'run_bz{train_cfg["batch_size"]}_lr{train_cfg["learning_rate"]}',
@@ -164,7 +164,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     
-    train_loader, test_loader = PROTACLoader(root='data/PROTAC-fine', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, train_ratio=train_cfg['train_ratio'])
+    train_loader, test_loader = PROTACLoader(root='data/protacdb3', name='protac_fine_with_e3uniprot', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, train_ratio=train_cfg['train_ratio'])
 
     model = PROTAC_STAN(model_cfg)
     print(model)
