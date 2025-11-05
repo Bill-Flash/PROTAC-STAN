@@ -85,6 +85,7 @@ def main():
     model_cfg = cfg['model']
 
     model = PROTAC_STAN(model_cfg)
+    # path = 'saved_models/20251102/144009/model_state_dict.pt'
     path = 'saved_models/protac-stan.pt'
     print(f'Loading model from {path}...')
     state_dict = torch.load(path)

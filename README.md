@@ -123,6 +123,11 @@ pip install wandb
 # [Optional] Install torch-scatter to accelerate pyg computing
 wget https://data.pyg.org/whl/torch-2.1.0%2Bcu118/torch_scatter-2.1.2%2Bpt21cu118-cp311-cp311-linux_x86_64.whl
 pip install torch_scatter-2.1.2+pt21cu118-cp311-cp311-linux_x86_64.whl
+
+# [NEWNEW]下载并安装 torch_scatter
+wget https://data.pyg.org/whl/torch-2.2.0+cu121/torch_scatter-2.1.2+pt22cu121-cp311-cp311-linux_x86_64.whl
+pip install torch_scatter-2.1.2+pt22cu121-cp311-cp311-linux_x86_64.whl
+
 ```
 4. Download repository
 ```shell
