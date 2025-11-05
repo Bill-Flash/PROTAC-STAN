@@ -136,9 +136,13 @@ def data_to_graph(raw_data, with_hydrogen: bool = False, kekulize: bool = False)
             maccs_fp = [0] * 166
     else:
         maccs_fp = [0] * 166
-    # 合并所有特征
-    global_feature = smiles_encoding + mol_properties + maccs_fp
+    
+    # 合并节点特征（不包括MACCS）
+    global_feature = smiles_encoding + mol_properties  # 128 + 9 = 137维
     global_feature = torch.tensor(global_feature, dtype=torch.float).view(1, -1)
+    
+    # MACCS单独保存
+    maccs_fp = torch.tensor(maccs_fp, dtype=torch.float).view(1, -1)
 
     xs = []
     for atom in mol.GetAtoms():
@@ -175,8 +179,7 @@ def data_to_graph(raw_data, with_hydrogen: bool = False, kekulize: bool = False)
         perm = (edge_index[0] * x.size(0) + edge_index[1]).argsort()
         edge_index, edge_attr = edge_index[:, perm], edge_attr[perm]
         
-    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles)
-
+    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, maccs=maccs_fp)
 
 class PROTACData(InMemoryDataset):
     """
