@@ -11,12 +11,13 @@ from tan import TAN
 class PROTAC_STAN(nn.Module):
     def __init__(self, cfg):
         super(PROTAC_STAN, self).__init__()
+        fingerprint_dim = cfg['protac'].get('fingerprint_dim', 2048)
         self.protac_encoder = MolecularEncoder(
             num_mol_features=cfg['protac']['feature'], 
             embedding_dim=cfg['protac']['embed'],
             hidden_channels=cfg['protac']['hidden'], 
             edge_dim=cfg['protac']['edge_dim'],
-            maccs_dim=166  # MACCS指纹维度
+            fingerprint_dim=fingerprint_dim  # Morgan指纹维度（从配置读取，默认2048）
         )
         self.e3_ligase_encoder = ProteinEncoder(
             embedding_dim=cfg['protein']['embed'],
@@ -37,8 +38,8 @@ class PROTAC_STAN(nn.Module):
             nn.Linear(cfg['clf']['hidden'], cfg['clf']['class']),
         )
 
-    def forward(self, protac, e3_ligase, poi, mode='train', maccs=None):
-        protac_embedding = self.protac_encoder(protac, maccs=maccs)
+    def forward(self, protac, e3_ligase, poi, mode='train', fingerprint=None):
+        protac_embedding = self.protac_encoder(protac, fingerprint=fingerprint)
         e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)
         poi_embedding = self.poi_encoder(poi)
         
@@ -100,17 +101,17 @@ class EdgedGCNConv(MessagePassing):
 
 
 class MolecularEncoder(nn.Module):
-    def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, maccs_dim=166):
+    def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, fingerprint_dim=2048):
         super(MolecularEncoder, self).__init__()
         self.lin = nn.Linear(num_mol_features, embedding_dim)
         self.bn = nn.BatchNorm1d(embedding_dim)
         self.conv1 = EdgedGCNConv(embedding_dim, hidden_channels, edge_dim)
         self.conv2 = EdgedGCNConv(hidden_channels, embedding_dim, edge_dim)
         
-        # MACCS特征处理
-        self.maccs_lin = nn.Linear(maccs_dim, embedding_dim)  # 将166维MACCS映射到64维
+        # Morgan指纹特征处理
+        self.fingerprint_lin = nn.Linear(fingerprint_dim, embedding_dim)  # 将2048维Morgan指纹映射到64维
 
-    def forward(self, data, maccs=None):
+    def forward(self, data, fingerprint=None):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
         x = self.lin(x)
         x = self.bn(x)
@@ -120,10 +121,10 @@ class MolecularEncoder(nn.Module):
         x = self.conv2(x, edge_index, edge_attr)
         x = global_max_pool(x, batch)  # [batch_size, 64]
         
-        # 拼接MACCS特征
-        if maccs is not None:
-            maccs_embed = self.maccs_lin(maccs)  # [batch_size, 166] -> [batch_size, 64]
-            x = x + maccs_embed  # 相加融合，保持64维输出
+        # 融合Morgan指纹特征
+        if fingerprint is not None:
+            fingerprint_embed = self.fingerprint_lin(fingerprint)  # [batch_size, 2048] -> [batch_size, 64]
+            x = x + fingerprint_embed  # 相加融合，保持64维输出
         
         return x
 

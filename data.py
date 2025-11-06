@@ -123,26 +123,26 @@ def data_to_graph(raw_data, with_hydrogen: bool = False, kekulize: bool = False)
     smiles_encoding = trans_smiles(smiles)
     mol_properties = [raw_data[column] for column in columns[1:]]
     
-    # 解析MACCS Fingerprint
-    maccs_fp = []
-    if 'MACCS_Fingerprint' in raw_data and pd.notna(raw_data.get('MACCS_Fingerprint')):
+    # 解析Morgan Fingerprint（从CSV列读取）
+    fp = []
+    if 'Morgan_Fingerprint' in raw_data and pd.notna(raw_data.get('Morgan_Fingerprint')):
         try:
-            fp_str = str(raw_data['MACCS_Fingerprint'])
-            maccs_fp = [int(x) for x in fp_str.split(',')]
-            if len(maccs_fp) != 166:
+            fp_str = str(raw_data['Morgan_Fingerprint'])
+            fp = [int(x) for x in fp_str.split(',')]
+            if len(fp) != 2048:
                 # 如果长度不对，使用全零向量
-                maccs_fp = [0] * 166
+                fp = [0] * 2048
         except:
-            maccs_fp = [0] * 166
+            fp = [0] * 2048
     else:
-        maccs_fp = [0] * 166
+        fp = [0] * 2048
     
-    # 合并节点特征（不包括MACCS）
+    # 合并节点特征（不包括指纹）
     global_feature = smiles_encoding + mol_properties  # 128 + 9 = 137维
     global_feature = torch.tensor(global_feature, dtype=torch.float).view(1, -1)
     
-    # MACCS单独保存
-    maccs_fp = torch.tensor(maccs_fp, dtype=torch.float).view(1, -1)
+    # Morgan指纹单独保存
+    fp = torch.tensor(fp, dtype=torch.float).view(1, -1)
 
     xs = []
     for atom in mol.GetAtoms():
@@ -179,7 +179,7 @@ def data_to_graph(raw_data, with_hydrogen: bool = False, kekulize: bool = False)
         perm = (edge_index[0] * x.size(0) + edge_index[1]).argsort()
         edge_index, edge_attr = edge_index[:, perm], edge_attr[perm]
         
-    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, maccs=maccs_fp)
+    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, smiles=smiles, fingerprint=fp)
 
 class PROTACData(InMemoryDataset):
     """

@@ -44,11 +44,11 @@ def test(model, test_loader, device):
             e3_ligase_data = data['e3_ligase'].to(device)
             poi_data = data['poi'].to(device)
             label = data['label'].to(device)
-            maccs = data.get('maccs', None)
-            if maccs is not None:
-                maccs = maccs.to(device)
+            fingerprint = data.get('fingerprint', None)
+            if fingerprint is not None:
+                fingerprint = fingerprint.to(device)
 
-            outputs = model(protac_data, e3_ligase_data, poi_data, maccs=maccs)
+            outputs = model(protac_data, e3_ligase_data, poi_data, fingerprint=fingerprint)
             _, predicted = torch.max(outputs.data, dim=1)
 
             loss = criterion(outputs, label)
@@ -85,13 +85,13 @@ def train(model, train_loader, test_loader, device, lr=0.001, num_epochs=10):
             e3_ligase_data = data['e3_ligase'].to(device)
             poi_data = data['poi'].to(device)
             label = data['label'].to(device)
-            maccs = data.get('maccs', None)
-            if maccs is not None:
-                maccs = maccs.to(device)
+            fingerprint = data.get('fingerprint', None)
+            if fingerprint is not None:
+                fingerprint = fingerprint.to(device)
 
             optimizer.zero_grad()
 
-            outputs = model(protac_data, e3_ligase_data, poi_data, maccs=maccs)
+            outputs = model(protac_data, e3_ligase_data, poi_data, fingerprint=fingerprint)
             loss = criterion(outputs, label)
             loss.backward()
             optimizer.step()
@@ -170,7 +170,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     
-    train_loader, test_loader = PROTACLoader(root='data/protacdb3', name='protac_maccs', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, train_ratio=train_cfg['train_ratio'])
+    train_loader, test_loader = PROTACLoader(root='data/protacdb3', name='protac_maccs_morgan', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, train_ratio=train_cfg['train_ratio'])
 
     model = PROTAC_STAN(model_cfg)
     print(model)
