@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from rdkit import Chem, RDLogger
 from torch_geometric.data import Data, InMemoryDataset
-
+## TODO: 添加数据划分函数，根据相似度划分训练集和测试集
 RDLogger.DisableLog('rdApp.*')
 
 

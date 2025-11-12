@@ -9,6 +9,7 @@ from tan import TAN
 
 
 class PROTAC_STAN(nn.Module):
+    ## TODO: 微调ESM小模型
     def __init__(self, cfg):
         super(PROTAC_STAN, self).__init__()
         fingerprint_dim = cfg['protac'].get('fingerprint_dim', 166)
@@ -101,6 +102,7 @@ class EdgedGCNConv(MessagePassing):
 
 
 class MolecularEncoder(nn.Module):
+    ## TODO: 需要修改，使用GINConv代替EdgedGCNConv
     def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, fingerprint_dim=166):
         super(MolecularEncoder, self).__init__()
         self.lin = nn.Linear(num_mol_features, embedding_dim)
