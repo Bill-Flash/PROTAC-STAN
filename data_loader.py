@@ -14,6 +14,13 @@ def collate_fn(data_list):
     label = [item['label'] for item in data_list]
 
     batch['protac'] =  Batch.from_data_list(protac)
+    # 从batch中提取MACCS指纹特征
+    if hasattr(protac[0], 'fingerprint'):
+        fingerprint_list = [item.fingerprint for item in protac]
+        batch['fingerprint'] = torch.stack(fingerprint_list).squeeze(1)  # [batch_size, 166]
+    else:
+        batch['fingerprint'] = None
+    
     batch['e3_ligase'] = torch.stack(e3_ligase)
     batch['poi'] = torch.stack(poi)
     batch['label'] = torch.stack(label) if label[0] is not None else None

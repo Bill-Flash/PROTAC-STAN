@@ -4,10 +4,11 @@ type = "PROTAC-STAN"
 seed = 21332
 
 [model.protac]
-feature = 146
+feature = 146  # 从312改为146（移除了166维MACCS）
 embed = 64
 hidden = 128
 edge_dim = 3
+fingerprint_dim = 166
 
 [model.protein]
 embed = 1280
