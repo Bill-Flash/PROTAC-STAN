@@ -123,19 +123,19 @@ def data_to_graph(raw_data, with_hydrogen: bool = False, kekulize: bool = False)
     smiles_encoding = trans_smiles(smiles)
     mol_properties = [raw_data[column] for column in columns[1:]]
     
-    # 解析Morgan Fingerprint（从CSV列读取）
+    # 解析MACCS Fingerprint（从CSV列读取）
     fp = []
-    if 'Morgan_Fingerprint' in raw_data and pd.notna(raw_data.get('Morgan_Fingerprint')):
+    if 'MACCS_Fingerprint' in raw_data and pd.notna(raw_data.get('MACCS_Fingerprint')):
         try:
-            fp_str = str(raw_data['Morgan_Fingerprint'])
+            fp_str = str(raw_data['MACCS_Fingerprint'])
             fp = [int(x) for x in fp_str.split(',')]
-            if len(fp) != 2048:
+            if len(fp) != 166:
                 # 如果长度不对，使用全零向量
-                fp = [0] * 2048
+                fp = [0] * 166
         except:
-            fp = [0] * 2048
+            fp = [0] * 166
     else:
-        fp = [0] * 2048
+        fp = [0] * 166
     
     # 合并节点特征（不包括指纹）
     global_feature = smiles_encoding + mol_properties  # 128 + 9 = 137维

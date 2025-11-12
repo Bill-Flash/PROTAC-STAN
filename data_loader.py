@@ -14,10 +14,10 @@ def collate_fn(data_list):
     label = [item['label'] for item in data_list]
 
     batch['protac'] =  Batch.from_data_list(protac)
-    # 从batch中提取Morgan指纹特征
+    # 从batch中提取MACCS指纹特征
     if hasattr(protac[0], 'fingerprint'):
         fingerprint_list = [item.fingerprint for item in protac]
-        batch['fingerprint'] = torch.stack(fingerprint_list).squeeze(1)  # [batch_size, 2048]
+        batch['fingerprint'] = torch.stack(fingerprint_list).squeeze(1)  # [batch_size, 166]
     else:
         batch['fingerprint'] = None
     

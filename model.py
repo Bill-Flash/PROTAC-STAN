@@ -11,13 +11,13 @@ from tan import TAN
 class PROTAC_STAN(nn.Module):
     def __init__(self, cfg):
         super(PROTAC_STAN, self).__init__()
-        fingerprint_dim = cfg['protac'].get('fingerprint_dim', 2048)
+        fingerprint_dim = cfg['protac'].get('fingerprint_dim', 166)
         self.protac_encoder = MolecularEncoder(
             num_mol_features=cfg['protac']['feature'], 
             embedding_dim=cfg['protac']['embed'],
             hidden_channels=cfg['protac']['hidden'], 
             edge_dim=cfg['protac']['edge_dim'],
-            fingerprint_dim=fingerprint_dim  # Morgan指纹维度（从配置读取，默认2048）
+            fingerprint_dim=fingerprint_dim  # MACCS指纹维度（从配置读取，默认166）
         )
         self.e3_ligase_encoder = ProteinEncoder(
             embedding_dim=cfg['protein']['embed'],
@@ -101,15 +101,15 @@ class EdgedGCNConv(MessagePassing):
 
 
 class MolecularEncoder(nn.Module):
-    def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, fingerprint_dim=2048):
+    def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, fingerprint_dim=166):
         super(MolecularEncoder, self).__init__()
         self.lin = nn.Linear(num_mol_features, embedding_dim)
         self.bn = nn.BatchNorm1d(embedding_dim)
         self.conv1 = EdgedGCNConv(embedding_dim, hidden_channels, edge_dim)
         self.conv2 = EdgedGCNConv(hidden_channels, embedding_dim, edge_dim)
         
-        # Morgan指纹特征处理
-        self.fingerprint_lin = nn.Linear(fingerprint_dim, embedding_dim)  # 将2048维Morgan指纹映射到64维
+        # MACCS指纹特征处理
+        self.fingerprint_lin = nn.Linear(fingerprint_dim, embedding_dim)  # 将166维MACCS指纹映射到64维
 
     def forward(self, data, fingerprint=None):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
@@ -121,9 +121,9 @@ class MolecularEncoder(nn.Module):
         x = self.conv2(x, edge_index, edge_attr)
         x = global_max_pool(x, batch)  # [batch_size, 64]
         
-        # 融合Morgan指纹特征
+        # 融合MACCS指纹特征
         if fingerprint is not None:
-            fingerprint_embed = self.fingerprint_lin(fingerprint)  # [batch_size, 2048] -> [batch_size, 64]
+            fingerprint_embed = self.fingerprint_lin(fingerprint)  # [batch_size, 166] -> [batch_size, 64]
             x = x + fingerprint_embed  # 相加融合，保持64维输出
         
         return x
