@@ -49,12 +49,13 @@ class PROTACDataset(Dataset):
         return item
     
 
-def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8, use_smiles_split=False, seed=None):
+def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8, use_smiles_split=False, seed=None, save_split_csv=True):
     """
     Args:
         use_smiles_split: 如果为 True，使用 train/test_compound_smiles.csv 进行划分
                           如果为 False，使用随机划分（原始行为）
         seed: 随机种子，用于确保随机划分的可复现性
+        save_split_csv: 如果为 True，保存划分结果到CSV文件
     """
     protac = PROTACData(root, name=name) # name: raw file name
     with open(f'{root}/processed/{name}/e3_ligase.pt', 'rb') as f:
@@ -139,6 +140,62 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
     print('Dropped overlapping:')
     print('Train size: ', len(train_dataset))
     print('Test size: ', len(test_dataset))
+
+    # 保存划分结果到CSV文件
+    if save_split_csv:
+        try:
+            # 读取原始CSV文件以获取更多信息（如Compound ID等）
+            import os.path as osp
+            raw_csv_path = osp.join(root, f'{name}.csv')
+            if osp.exists(raw_csv_path):
+                raw_df = pd.read_csv(raw_csv_path)
+                # 确保有Smiles列（注意大小写）
+                smiles_col = 'Smiles' if 'Smiles' in raw_df.columns else 'SMILES'
+                
+                # 收集train和test的SMILES
+                train_smiles_list = [data['protac'].smiles for data in train_dataset]
+                test_smiles_list = [data['protac'].smiles for data in test_dataset]
+                
+                # 从原始CSV中匹配并提取数据
+                train_df = raw_df[raw_df[smiles_col].isin(train_smiles_list)].copy()
+                test_df = raw_df[raw_df[smiles_col].isin(test_smiles_list)].copy()
+                
+                # 如果原始CSV有Compound ID，使用它；否则只保存SMILES
+                if 'Compound ID' in train_df.columns:
+                    train_save_df = train_df[['Compound ID', smiles_col]].copy()
+                    train_save_df.columns = ['Compound ID', 'SMILES']
+                else:
+                    train_save_df = pd.DataFrame({'SMILES': train_smiles_list})
+                
+                if 'Compound ID' in test_df.columns:
+                    test_save_df = test_df[['Compound ID', smiles_col]].copy()
+                    test_save_df.columns = ['Compound ID', 'SMILES']
+                else:
+                    test_save_df = pd.DataFrame({'SMILES': test_smiles_list})
+                
+                # 保存CSV文件
+                train_csv_path = f'{root}/train_compound_smiles.csv'
+                test_csv_path = f'{root}/test_compound_smiles.csv'
+                train_save_df.to_csv(train_csv_path, index=False)
+                test_save_df.to_csv(test_csv_path, index=False)
+                print(f'Saved train split to {train_csv_path}')
+                print(f'Saved test split to {test_csv_path}')
+            else:
+                # 如果原始CSV不存在，只保存SMILES
+                train_smiles_list = [data['protac'].smiles for data in train_dataset]
+                test_smiles_list = [data['protac'].smiles for data in test_dataset]
+                
+                train_save_df = pd.DataFrame({'SMILES': train_smiles_list})
+                test_save_df = pd.DataFrame({'SMILES': test_smiles_list})
+                
+                train_csv_path = f'{root}/train_compound_smiles.csv'
+                test_csv_path = f'{root}/test_compound_smiles.csv'
+                train_save_df.to_csv(train_csv_path, index=False)
+                test_save_df.to_csv(test_csv_path, index=False)
+                print(f'Saved train split to {train_csv_path}')
+                print(f'Saved test split to {test_csv_path}')
+        except Exception as e:
+            print(f'Warning: Failed to save split CSV files: {e}')
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
