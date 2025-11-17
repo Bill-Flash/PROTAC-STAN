@@ -170,7 +170,9 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     
-    train_loader, test_loader = PROTACLoader(root='data/protacdb3', name='protac_maccs_morgan', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, train_ratio=train_cfg['train_ratio'])
+    train_loader, test_loader = PROTACLoader(
+        root='data/protacdb3', name='protac_maccs', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, 
+        train_ratio=train_cfg['train_ratio'], seed=model_cfg['seed'])
 
     model = PROTAC_STAN(model_cfg)
     print(model)

@@ -49,11 +49,12 @@ class PROTACDataset(Dataset):
         return item
     
 
-def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8, use_smiles_split=False):
+def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8, use_smiles_split=False, seed=None):
     """
     Args:
         use_smiles_split: 如果为 True，使用 train/test_compound_smiles.csv 进行划分
                           如果为 False，使用随机划分（原始行为）
+        seed: 随机种子，用于确保随机划分的可复现性
     """
     protac = PROTACData(root, name=name) # name: raw file name
     with open(f'{root}/processed/{name}/e3_ligase.pt', 'rb') as f:
@@ -125,7 +126,11 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
         test_loader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
         return None, test_loader
 
-    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
+    # 使用 seed 创建 generator 以确保可复现性
+    generator = None
+    if seed is not None:
+        generator = torch.Generator().manual_seed(seed)
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size], generator=generator)
 
     # Drop overlapping data in test set from train set
     train_smiles = set([data['protac'].smiles for data in train_dataset])
