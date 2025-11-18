@@ -101,14 +101,38 @@ class EdgedGCNConv(MessagePassing):
         )
 
 
+class EdgedGINConv(MessagePassing):
+    """GINConv with edge features: message = h_u + edge_mlp(edge_attr)"""
+    def __init__(self, in_channels, out_channels, edge_dim, eps=0.0):
+        super(EdgedGINConv, self).__init__(aggr='add')
+        self.nn = nn.Sequential(
+            nn.Linear(in_channels, out_channels),
+            nn.ReLU(),
+            nn.Linear(out_channels, out_channels)
+        )
+        self.edge_mlp = nn.Linear(edge_dim, in_channels)
+        self.eps = eps
+
+    def forward(self, x, edge_index, edge_attr):
+        edge_index, _ = add_self_loops(edge_index, num_nodes=x.size(0))
+        self_loop_attr = torch.zeros((x.size(0), edge_attr.size(1)), dtype=edge_attr.dtype, device=edge_attr.device)
+        edge_attr = torch.cat((edge_attr, self_loop_attr), dim=0)
+        
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=(x.size(0), x.size(0)))
+        out = self.nn((1 + self.eps) * x + out)
+        return out
+
+    def message(self, x_j, edge_attr):
+        return x_j + self.edge_mlp(edge_attr)
+
+
 class MolecularEncoder(nn.Module):
-    ## TODO: 需要修改，使用GINConv代替EdgedGCNConv
     def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, fingerprint_dim=166):
         super(MolecularEncoder, self).__init__()
         self.lin = nn.Linear(num_mol_features, embedding_dim)
         self.bn = nn.BatchNorm1d(embedding_dim)
-        self.conv1 = EdgedGCNConv(embedding_dim, hidden_channels, edge_dim)
-        self.conv2 = EdgedGCNConv(hidden_channels, embedding_dim, edge_dim)
+        self.conv1 = EdgedGINConv(embedding_dim, hidden_channels, edge_dim)
+        self.conv2 = EdgedGINConv(hidden_channels, embedding_dim, edge_dim)
         
         # MACCS指纹特征处理
         self.fingerprint_lin = nn.Linear(fingerprint_dim, embedding_dim)  # 将166维MACCS指纹映射到64维
