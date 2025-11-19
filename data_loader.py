@@ -28,6 +28,16 @@ def collate_fn(data_list):
     return batch
 
 
+def _sample_key(sample):
+    smiles = sample['protac'].smiles
+    poi_tensor = sample['poi']
+    if isinstance(poi_tensor, torch.Tensor):
+        target_bytes = poi_tensor.detach().cpu().numpy().tobytes()
+    else:
+        target_bytes = bytes(poi_tensor)
+    return (smiles, target_bytes)
+
+
 class PROTACDataset(Dataset):
     def __init__(self, protac, e3_ligase, poi, label):
         self.protac = protac
@@ -134,8 +144,8 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size], generator=generator)
 
     # Drop overlapping data in test set from train set
-    train_smiles = set([data['protac'].smiles for data in train_dataset])
-    test_dataset = [data for data in test_dataset if data['protac'].smiles not in train_smiles]
+    train_keys = {_sample_key(data) for data in train_dataset}
+    test_dataset = [data for data in test_dataset if _sample_key(data) not in train_keys]
 
     print('Dropped overlapping:')
     print('Train size: ', len(train_dataset))
