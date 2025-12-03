@@ -7,29 +7,66 @@ from torch_geometric.utils import add_self_loops, degree
 from tan import TAN
 # from torch.nn.utils.weight_norm import weight_norm
 
+from esm2_online import ESM2Base150M
+
 
 class PROTAC_STAN(nn.Module):
-    ## TODO: 微调ESM小模型
+    """
+    主模型。
+    兼容两种蛋白输入方式：
+    1) legacy: 直接输入预先计算好的蛋白 embedding（与原始实现一致）
+    2) online_esm: 直接输入氨基酸序列，内部调用 ESM2Base150M 进行编码（支持未来微调）
+    """
+
     def __init__(self, cfg):
         super(PROTAC_STAN, self).__init__()
         fingerprint_dim = cfg['protac'].get('fingerprint_dim', 166)
+
+        # small molecule encoder
         self.protac_encoder = MolecularEncoder(
-            num_mol_features=cfg['protac']['feature'], 
+            num_mol_features=cfg['protac']['feature'],
             embedding_dim=cfg['protac']['embed'],
-            hidden_channels=cfg['protac']['hidden'], 
+            hidden_channels=cfg['protac']['hidden'],
             edge_dim=cfg['protac']['edge_dim'],
-            fingerprint_dim=fingerprint_dim  # MACCS指纹维度（从配置读取，默认166）
+            fingerprint_dim=fingerprint_dim,  # MACCS指纹维度（从配置读取，默认166）
         )
-        self.e3_ligase_encoder = ProteinEncoder(
-            embedding_dim=cfg['protein']['embed'],
-            hidden=cfg['protein']['hidden'],
-            out_dim=cfg['protein']['out_dim'],
-        )
-        self.poi_encoder = ProteinEncoder(
-            embedding_dim=cfg['protein']['embed'],
-            hidden=cfg['protein']['hidden'],
-            out_dim=cfg['protein']['out_dim'],
-        )
+
+        # === 蛋白编码部分 ===
+        protein_mode = cfg['protein'].get('mode', 'legacy')
+        self.protein_mode = protein_mode
+
+        if protein_mode == 'legacy':
+            # 与原实现完全一致：输入已经是 ESM embedding
+            self.e3_ligase_encoder = ProteinEncoder(
+                embedding_dim=cfg['protein']['embed'],
+                hidden=cfg['protein']['hidden'],
+                out_dim=cfg['protein']['out_dim'],
+            )
+            self.poi_encoder = ProteinEncoder(
+                embedding_dim=cfg['protein']['embed'],
+                hidden=cfg['protein']['hidden'],
+                out_dim=cfg['protein']['out_dim'],
+            )
+
+        elif protein_mode == 'online_esm':
+            # 在线 ESM2 编码 + 线性适配层，支持未来微调
+            freeze_esm = cfg['protein'].get('freeze_esm', True)
+            pooling = cfg['protein'].get('pooling', 'mean')
+
+            self.e3_ligase_encoder = OnlineESMProteinEncoder(
+                hidden=cfg['protein']['hidden'],
+                out_dim=cfg['protein']['out_dim'],
+                freeze_esm=freeze_esm,
+                pooling=pooling,
+            )
+            self.poi_encoder = OnlineESMProteinEncoder(
+                hidden=cfg['protein']['hidden'],
+                out_dim=cfg['protein']['out_dim'],
+                freeze_esm=freeze_esm,
+                pooling=pooling,
+            )
+        else:
+            raise ValueError(f"Unknown protein mode: {protein_mode}")
 
         self.tan = TAN(cfg['tan']['in_dims'], cfg['clf']['embed'], cfg['tan']['heads'])
         self.mlp = nn.Sequential(
@@ -40,12 +77,29 @@ class PROTAC_STAN(nn.Module):
         )
 
     def forward(self, protac, e3_ligase, poi, mode='train', fingerprint=None):
+        """
+        Args:
+            protac: 图数据（与原实现相同）
+            e3_ligase:
+                - 若 protein_mode=='legacy'：Tensor, 预计算好的 embedding
+                - 若 protein_mode=='online_esm'：List[str]，E3 ligase 氨基酸序列
+            poi:
+                - 若 protein_mode=='legacy'：Tensor, 预计算好的 embedding
+                - 若 protein_mode=='online_esm'：List[str]，POI 氨基酸序列
+            fingerprint: MACCS 指纹（可选）
+        """
         protac_embedding = self.protac_encoder(protac, fingerprint=fingerprint)
-        e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)
-        poi_embedding = self.poi_encoder(poi)
-        
+
+        if self.protein_mode == 'legacy':
+            e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)
+            poi_embedding = self.poi_encoder(poi)
+        else:
+            # online_esm: 直接从序列编码
+            e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)
+            poi_embedding = self.poi_encoder(poi)
+
         atts = None
-        
+
         joint_embedding, atts = self.tan(
             protac_embedding.unsqueeze(2),
             e3_ligase_embedding.unsqueeze(2),
@@ -53,7 +107,7 @@ class PROTAC_STAN(nn.Module):
         )
         output = self.mlp(joint_embedding)
 
-        pred =  F.log_softmax(output, dim=1)
+        pred = F.log_softmax(output, dim=1)
 
         if mode == 'train':
             return pred
@@ -138,6 +192,31 @@ class ProteinEncoder(nn.Module):
         self.fc = nn.Linear(hidden, out_dim)
 
     def forward(self, x):
+        x = self.adapter(x)
+        x = F.relu(x)
+        x = self.fc(x)
+        return x
+
+
+class OnlineESMProteinEncoder(nn.Module):
+    """
+    使用 ESM2Base150M 的在线蛋白编码器。
+
+    - 输入：List[str]（一批氨基酸序列）
+    - 内部：ESM2Base150M + 两层 MLP 适配到 out_dim
+    - freeze_esm=True 时只训练适配层；False 时可端到端微调 ESM2
+    """
+
+    def __init__(self, hidden, out_dim, freeze_esm: bool = True, pooling: str = "mean"):
+        super().__init__()
+        self.esm = ESM2Base150M(freeze=freeze_esm, pooling=pooling)
+        self.adapter = nn.Linear(self.esm.hidden_size, hidden)
+        self.fc = nn.Linear(hidden, out_dim)
+
+    def forward(self, seqs: list[str]):
+        # ESM2 输出 (B, hidden_size)
+        x = self.esm(seqs)
+        # 下游适配
         x = self.adapter(x)
         x = F.relu(x)
         x = self.fc(x)

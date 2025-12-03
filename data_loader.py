@@ -1,3 +1,6 @@
+import os.path as osp
+import pickle
+
 import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 from torch_geometric.data import Batch
@@ -21,8 +24,16 @@ def collate_fn(data_list):
     else:
         batch['fingerprint'] = None
     
-    batch['e3_ligase'] = torch.stack(e3_ligase)
-    batch['poi'] = torch.stack(poi)
+    # e3_ligase / poi 可能是 tensor（离线 ESM embedding）或 str（在线 ESM 序列）
+    if isinstance(e3_ligase[0], torch.Tensor):
+        batch['e3_ligase'] = torch.stack(e3_ligase)
+    else:
+        batch['e3_ligase'] = e3_ligase
+
+    if isinstance(poi[0], torch.Tensor):
+        batch['poi'] = torch.stack(poi)
+    else:
+        batch['poi'] = poi
     batch['label'] = torch.stack(label) if label[0] is not None else None
 
     return batch
@@ -30,21 +41,31 @@ def collate_fn(data_list):
 
 def _sample_key(sample):
     smiles = sample['protac'].smiles
-    poi_tensor = sample['poi']
-    if isinstance(poi_tensor, torch.Tensor):
-        target_bytes = poi_tensor.detach().cpu().numpy().tobytes()
+    # 优先使用 POI 的 Uniprot ID 作为去重键，更语义化且与表示形式无关
+    if 'poi_uniprot' in sample and sample['poi_uniprot'] is not None:
+        target = sample['poi_uniprot']
     else:
-        target_bytes = bytes(poi_tensor)
-    return (smiles, target_bytes)
+        # 兼容旧数据：退回到基于 poi 表示本身的 key
+        poi_tensor = sample['poi']
+        if isinstance(poi_tensor, torch.Tensor):
+            target = poi_tensor.detach().cpu().numpy().tobytes()
+        else:
+            target = str(poi_tensor)
+    return (smiles, target)
 
 
 class PROTACDataset(Dataset):
-    def __init__(self, protac, e3_ligase, poi, label):
+    def __init__(self, protac, e3_ligase, poi, label, e3_uniprot=None, poi_uniprot=None):
         self.protac = protac
         self.e3_ligase = e3_ligase
         self.poi = poi
         if label is not None:
             self.label = label
+        # 可选的 Uniprot ID 列表，用于去重或分析
+        if e3_uniprot is not None:
+            self.e3_uniprot = e3_uniprot
+        if poi_uniprot is not None:
+            self.poi_uniprot = poi_uniprot
 
     def __len__(self):
         return len(self.protac)
@@ -56,16 +77,32 @@ class PROTACDataset(Dataset):
             'poi': self.poi[index],
             'label': self.label[index] if hasattr(self, 'label') else None
         }
+        if hasattr(self, 'e3_uniprot'):
+            item['e3_uniprot'] = self.e3_uniprot[index]
+        if hasattr(self, 'poi_uniprot'):
+            item['poi_uniprot'] = self.poi_uniprot[index]
         return item
     
 
-def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8, use_smiles_split=False, seed=None, save_split_csv=True):
+def PROTACLoader(
+    root='data/PROTAC-fine',
+    name='protac-fine',
+    batch_size=2,
+    collate_fn=collate_fn,
+    train_ratio=0.8,
+    use_smiles_split=False,
+    seed=None,
+    save_split_csv=True,
+    use_online_esm=False,
+):
     """
     Args:
         use_smiles_split: 如果为 True，使用 train/test_compound_smiles.csv 进行划分
                           如果为 False，使用随机划分（原始行为）
         seed: 随机种子，用于确保随机划分的可复现性
         save_split_csv: 如果为 True，保存划分结果到CSV文件
+        use_online_esm: 如果为 True，则使用 Uniprot ID 从 p_map.pkl 读取氨基酸序列，
+                        由下游模型（ESM2Base150M）在线编码，而不是使用预计算 embedding
     """
     protac = PROTACData(root, name=name) # name: raw file name
     with open(f'{root}/processed/{name}/e3_ligase.pt', 'rb') as f:
@@ -78,7 +115,33 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
     except:
         label = None
 
-    dataset = PROTACDataset(protac, e3_ligase, poi, label)
+    # 可选：加载 E3 / POI 的 Uniprot ID（若存在）
+    try:
+        with open(f'{root}/processed/{name}/e3_uniprot.pt', 'rb') as f:
+            e3_uniprot = torch.load(f)
+        with open(f'{root}/processed/{name}/poi_uniprot.pt', 'rb') as f:
+            poi_uniprot = torch.load(f)
+    except FileNotFoundError:
+        e3_uniprot = None
+        poi_uniprot = None
+
+    # 如果开启在线 ESM 模式，则使用 Uniprot ID 从 p_map.pkl 中恢复氨基酸序列
+    if use_online_esm:
+        if poi_uniprot is None:
+            raise RuntimeError("use_online_esm=True 但未找到 poi_uniprot.pt / e3_uniprot.pt，请先重新处理数据集。")
+
+        p_map_path = osp.join(root, 'p_map.pkl')
+        if not osp.exists(p_map_path):
+            raise RuntimeError(f"use_online_esm=True 但未找到 {p_map_path}，无法从 Uniprot 恢复序列。")
+
+        with open(p_map_path, 'rb') as f:
+            p_map = pickle.load(f)
+
+        # 根据 Uniprot ID 映射得到序列列表
+        e3_ligase = [p_map[uid] for uid in e3_uniprot]
+        poi = [p_map[uid] for uid in poi_uniprot]
+
+    dataset = PROTACDataset(protac, e3_ligase, poi, label, e3_uniprot=e3_uniprot, poi_uniprot=poi_uniprot)
 
     # 使用 SMILES CSV 文件进行划分
     if use_smiles_split:
@@ -155,7 +218,6 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
     if save_split_csv:
         try:
             # 读取原始CSV文件以获取更多信息（如Compound ID等）
-            import os.path as osp
             raw_csv_path = osp.join(root, f'{name}.csv')
             if osp.exists(raw_csv_path):
                 raw_df = pd.read_csv(raw_csv_path)

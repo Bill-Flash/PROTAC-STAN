@@ -41,12 +41,19 @@ def test(model, test_loader, device):
 
         for data in test_loader:
             protac_data = data['protac'].to(device)
-            e3_ligase_data = data['e3_ligase'].to(device)
-            poi_data = data['poi'].to(device)
             label = data['label'].to(device)
             fingerprint = data.get('fingerprint', None)
             if fingerprint is not None:
                 fingerprint = fingerprint.to(device)
+
+            # 根据模型的 protein_mode 决定蛋白输入形式
+            if getattr(model, 'protein_mode', 'legacy') == 'legacy':
+                e3_ligase_data = data['e3_ligase'].to(device)
+                poi_data = data['poi'].to(device)
+            else:
+                # online_esm: 直接传入序列列表（不需要 .to(device)）
+                e3_ligase_data = data['e3_ligase']
+                poi_data = data['poi']
 
             outputs = model(protac_data, e3_ligase_data, poi_data, fingerprint=fingerprint)
             _, predicted = torch.max(outputs.data, dim=1)
@@ -82,12 +89,19 @@ def train(model, train_loader, test_loader, device, lr=0.001, num_epochs=10):
         for data in train_loader:
         # for data in tqdm(train_loader):
             protac_data = data['protac'].to(device)
-            e3_ligase_data = data['e3_ligase'].to(device)
-            poi_data = data['poi'].to(device)
             label = data['label'].to(device)
             fingerprint = data.get('fingerprint', None)
             if fingerprint is not None:
                 fingerprint = fingerprint.to(device)
+
+            # 根据模型的 protein_mode 决定蛋白输入形式
+            if getattr(model, 'protein_mode', 'legacy') == 'legacy':
+                e3_ligase_data = data['e3_ligase'].to(device)
+                poi_data = data['poi'].to(device)
+            else:
+                # online_esm: 直接传入序列列表（不需要 .to(device)）
+                e3_ligase_data = data['e3_ligase']
+                poi_data = data['poi']
 
             optimizer.zero_grad()
 
@@ -152,6 +166,7 @@ def main():
     cfg = toml.load('config.toml')
     model_cfg = cfg['model']
     train_cfg = cfg['train']
+    protein_cfg = model_cfg['protein']
 
     setup_seed(model_cfg['seed'])
     
@@ -170,9 +185,17 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
     
+    use_online_esm = protein_cfg.get('mode', 'legacy') == 'online_esm'
+
     train_loader, test_loader = PROTACLoader(
-        root='data/protacdb3', name='protac_maccs', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, 
-        train_ratio=train_cfg['train_ratio'], seed=model_cfg['seed'])
+        root='data/protacdb3',
+        name='protac_maccs',
+        batch_size=train_cfg['batch_size'],
+        collate_fn=collate_fn,
+        train_ratio=train_cfg['train_ratio'],
+        seed=model_cfg['seed'],
+        use_online_esm=use_online_esm,
+    )
 
     model = PROTAC_STAN(model_cfg)
     print(model)

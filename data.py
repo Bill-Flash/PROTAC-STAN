@@ -216,7 +216,9 @@ class PROTACData(InMemoryDataset):
             'protac.pt',
             'e3_ligase.pt',
             'poi.pt',
-            'label.pt'
+            'label.pt',
+            'e3_uniprot.pt',
+            'poi_uniprot.pt',
         ]
 
     def process(self):
@@ -258,19 +260,22 @@ class PROTACData(InMemoryDataset):
         data, slices = self.collate(data_list)
         torch.save((data, slices), self.processed_paths[0])
 
-        # e3 ligase
+        # e3 ligase embedding & Uniprot ID
         e3 = protac_df['E3 ligase Uniprot'].to_list()
         e3_data_list = [esm_map[id] for id in e3]
-        e3_data_list = [torch.from_numpy(e3) for e3 in e3_data_list]
+        e3_data_list = [torch.from_numpy(e3_emb) for e3_emb in e3_data_list]
 
         torch.save(e3_data_list, self.processed_paths[1])
+        # 保存 E3 ligase 的 Uniprot ID，便于后续去重或分析
+        torch.save(e3, self.processed_paths[4])
 
-        # poi
+        # poi embedding & Uniprot ID
         poi = protac_df['Uniprot'].to_list()
         poi_data_list = [esm_map[id] for id in poi]
-        poi_data_list = [torch.from_numpy(poi) for poi in poi_data_list]
+        poi_data_list = [torch.from_numpy(poi_emb) for poi_emb in poi_data_list]
 
         torch.save(poi_data_list, self.processed_paths[2])
+        torch.save(poi, self.processed_paths[5])
 
         # label
         if 'label' not in protac_df.columns:

@@ -11,9 +11,12 @@ edge_dim = 3
 fingerprint_dim = 166
 
 [model.protein]
-embed = 1280
+embed = 1280          # 仅 legacy 模式使用
 hidden = 128
 out_dim = 64
+mode = "online_esm"   # 切换到在线 ESM2 模式：online_esm / legacy
+freeze_esm = true     # 先只训练下游适配层和分类器
+pooling = "mean"      # ESM2 表示聚合方式：mean / cls
 
 [model.tan]
 in_dims = [1, 1, 1]
