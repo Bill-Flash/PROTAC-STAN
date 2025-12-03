@@ -15,8 +15,13 @@ embed = 1280          # 仅 legacy 模式使用
 hidden = 128
 out_dim = 64
 mode = "online_esm"   # 切换到在线 ESM2 模式：online_esm / legacy
-freeze_esm = true     # 先只训练下游适配层和分类器
+freeze_esm = true     # 仅做特征抽取，不微调 ESM（use_lora=false 时生效）
 pooling = "mean"      # ESM2 表示聚合方式：mean / cls
+model_name = "facebook/esm2_t6_8M_UR50D"  # 使用更小的 ESM2 8M模型， esm2_t6_8M_UR50D/esm2_t12_35M_UR50D/esm2_t30_150M_UR50D
+use_lora = true      # 关闭 LoRA，仅做冻结特征抽取
+lora_r = 4            # 预留参数（当前不用）
+lora_alpha = 16       # 预留参数（当前不用）
+lora_dropout = 0.05   # 预留参数（当前不用）
 
 [model.tan]
 in_dims = [1, 1, 1]
@@ -30,7 +35,8 @@ class = 2
 
 [train]
 desc = 'train parameters'
-learning_rate = 0.0005
+learning_rate = 0.0005      # 下游模块学习率
+lora_learning_rate = 0.00001  # LoRA 专用学习率 1e-5
 batch_size = 4
 num_epochs = 100
 train_ratio = 0.8

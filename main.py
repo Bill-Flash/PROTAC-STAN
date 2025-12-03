@@ -71,11 +71,32 @@ def test(model, test_loader, device):
     return accuracy, loss, roc_auc, f1
 
 
-def train(model, train_loader, test_loader, device, lr=0.001, num_epochs=10):
+def train(model, train_loader, test_loader, device, lr=0.001, num_epochs=10, lora_lr=None):
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    # 若指定了 lora_lr，则为 LoRA 参数单独设置更小的学习率
+    if lora_lr is not None:
+        lora_params = []
+        other_params = []
+        for name, p in model.named_parameters():
+            if not p.requires_grad:
+                continue
+            # LoRA 权重名称中包含 "lora_"（如 lora_A.default.weight / lora_B.default.weight）
+            if "lora_" in name:
+                lora_params.append(p)
+            else:
+                other_params.append(p)
+
+        optimizer = optim.Adam(
+            [
+                {"params": other_params, "lr": lr},
+                {"params": lora_params, "lr": lora_lr},
+            ]
+        )
+    else:
+        optimizer = optim.Adam(model.parameters(), lr=lr)
 
     patience = 30
     best_loss = float('inf')
@@ -202,9 +223,10 @@ def main():
     wandb.watch(model)
 
     model = train(
-        model, train_loader, test_loader, device, 
-        lr=train_cfg['learning_rate'], 
-        num_epochs=train_cfg['num_epochs'], 
+        model, train_loader, test_loader, device,
+        lr=train_cfg['learning_rate'],
+        num_epochs=train_cfg['num_epochs'],
+        lora_lr=train_cfg.get('lora_learning_rate', None),
     )
 
     torch.save(model, f'{model_dir}/model.pt') # save full model (state_dict + architecture)    

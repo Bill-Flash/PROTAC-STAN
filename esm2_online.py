@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from transformers import AutoTokenizer, AutoModel
+from peft import LoraConfig, get_peft_model
 
 
 class ESM2Base150M(nn.Module):
@@ -21,20 +22,47 @@ class ESM2Base150M(nn.Module):
         freeze: bool = True,
         pooling: str = "mean",
         max_length: int = 1022,
+        # LoRA 相关配置
+        use_lora: bool = False,
+        lora_r: int = 8,
+        lora_alpha: int = 32,
+        lora_dropout: float = 0.05,
     ):
         super().__init__()
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name)
+
+        base_model = AutoModel.from_pretrained(model_name)
+
+        # ===== LoRA 接入逻辑 =====
+        # - 若 use_lora=True：在注意力投影层上挂 LoRA 适配器
+        #   EsmModel 的注意力实现为 Bert 风格，线性层命名为 query/key/value/dense
+        # - 默认只训练 LoRA 参数，冻结 base_model 的原始权重，显著降低可训练参数量
+        if use_lora:
+            peft_config = LoraConfig(
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                # ESM2 (HuggingFace EsmModel) 中注意力层的线性层命名为 query/key/value/dense
+                # 对应你想要的 q_proj/k_proj/v_proj/out_proj 功能位置
+                target_modules=["query", "key", "value", "dense"],
+                task_type="SEQ_CLS",  # 这里只做序列级表征/下游分类
+            )
+            # 冻结 base 模型权重，仅训练 LoRA 层
+            for p in base_model.parameters():
+                p.requires_grad = False
+            self.model = get_peft_model(base_model, peft_config)
+        else:
+            self.model = base_model
+            # 不使用 LoRA 时，可选地整体冻结 ESM2
+            if freeze:
+                for p in self.model.parameters():
+                    p.requires_grad = False
 
         self.hidden_size = self.model.config.hidden_size
         self.fp16 = fp16
         self.pooling = pooling
         self.max_length = max_length
-
-        if freeze:
-            for p in self.model.parameters():
-                p.requires_grad = False
 
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"

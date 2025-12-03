@@ -52,18 +52,33 @@ class PROTAC_STAN(nn.Module):
             # 在线 ESM2 编码 + 线性适配层，支持未来微调
             freeze_esm = cfg['protein'].get('freeze_esm', True)
             pooling = cfg['protein'].get('pooling', 'mean')
+            esm_model_name = cfg['protein'].get('model_name', "facebook/esm2_t30_150M_UR50D")
+            use_lora = cfg['protein'].get('use_lora', False)
+            lora_r = cfg['protein'].get('lora_r', 8)
+            lora_alpha = cfg['protein'].get('lora_alpha', 32)
+            lora_dropout = cfg['protein'].get('lora_dropout', 0.05)
 
             self.e3_ligase_encoder = OnlineESMProteinEncoder(
                 hidden=cfg['protein']['hidden'],
                 out_dim=cfg['protein']['out_dim'],
                 freeze_esm=freeze_esm,
                 pooling=pooling,
+                model_name=esm_model_name,
+                use_lora=use_lora,
+                lora_r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
             )
             self.poi_encoder = OnlineESMProteinEncoder(
                 hidden=cfg['protein']['hidden'],
                 out_dim=cfg['protein']['out_dim'],
                 freeze_esm=freeze_esm,
                 pooling=pooling,
+                model_name=esm_model_name,
+                use_lora=use_lora,
+                lora_r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
             )
         else:
             raise ValueError(f"Unknown protein mode: {protein_mode}")
@@ -248,15 +263,39 @@ class OnlineESMProteinEncoder(nn.Module):
     - freeze_esm=True 时只训练适配层；False 时可端到端微调 ESM2
     """
 
-    def __init__(self, hidden, out_dim, freeze_esm: bool = True, pooling: str = "mean"):
+    def __init__(
+        self,
+        hidden,
+        out_dim,
+        freeze_esm: bool = True,
+        pooling: str = "mean",
+        model_name: str = "facebook/esm2_t30_150M_UR50D",
+        use_lora: bool = False,
+        lora_r: int = 8,
+        lora_alpha: int = 32,
+        lora_dropout: float = 0.05,
+    ):
         super().__init__()
-        self.esm = ESM2Base150M(freeze=freeze_esm, pooling=pooling)
+
+        # 若启用 LoRA，则总是关闭 "冻结 + 缓存" 模式，以保证梯度能回传到 LoRA 层
+        if use_lora:
+            freeze_esm = False
+
+        self.esm = ESM2Base150M(
+            model_name=model_name,
+            freeze=freeze_esm,
+            pooling=pooling,
+            use_lora=use_lora,
+            lora_r=lora_r,
+            lora_alpha=lora_alpha,
+            lora_dropout=lora_dropout,
+        )
         self.adapter = nn.Linear(self.esm.hidden_size, hidden)
         self.fc = nn.Linear(hidden, out_dim)
 
-        # 缓存仅在 ESM 冻结时启用：每条唯一序列只计算一次 ESM 表征
+        # 缓存仅在 ESM 完全冻结、且未使用 LoRA 时启用：每条唯一序列只计算一次 ESM 表征
         self.freeze_esm = freeze_esm
-        self.embedding_cache = {} if freeze_esm else None  # dict[str, torch.Tensor]
+        self.embedding_cache = {} if (freeze_esm and not use_lora) else None  # dict[str, torch.Tensor] | None
 
     def forward(self, seqs: list[str]):
         """
