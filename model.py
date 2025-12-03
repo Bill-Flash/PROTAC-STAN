@@ -213,9 +213,47 @@ class OnlineESMProteinEncoder(nn.Module):
         self.adapter = nn.Linear(self.esm.hidden_size, hidden)
         self.fc = nn.Linear(hidden, out_dim)
 
+        # 缓存仅在 ESM 冻结时启用：每条唯一序列只计算一次 ESM 表征
+        self.freeze_esm = freeze_esm
+        self.embedding_cache = {} if freeze_esm else None  # dict[str, torch.Tensor]
+
     def forward(self, seqs: list[str]):
-        # ESM2 输出 (B, hidden_size)
-        x = self.esm(seqs)
+        """
+        seqs: List[str]，当前 batch 的氨基酸序列
+        """
+        # 冻结 + 缓存模式：每条唯一序列只跑一次 ESM
+        if self.freeze_esm and self.embedding_cache is not None:
+            device = next(self.adapter.parameters()).device
+            hidden_size = self.esm.hidden_size
+
+            # 先为当前 batch 准备占位
+            batch_embeddings = [None] * len(seqs)  # type: ignore[var-annotated]
+            to_compute = []  # list of (idx, seq)
+
+            for i, s in enumerate(seqs):
+                if s in self.embedding_cache:
+                    # 已缓存：直接使用（搬到当前设备）
+                    batch_embeddings[i] = self.embedding_cache[s].to(device)
+                else:
+                    to_compute.append((i, s))
+
+            if to_compute:
+                # 对未缓存的序列一次性跑 ESM
+                _, seq_list = zip(*to_compute)
+                new_emb = self.esm(list(seq_list))  # (K, hidden_size)
+
+                for row, (i, s) in enumerate(to_compute):
+                    emb_i = new_emb[row]  # (hidden_size,)
+                    # 缓存到 CPU，节省显存
+                    self.embedding_cache[s] = emb_i.detach().cpu()
+                    batch_embeddings[i] = emb_i.to(device)
+
+            # 所有位置都应被填充
+            x = torch.stack(batch_embeddings, dim=0)  # type: ignore[arg-type]
+        else:
+            # 非冻结模式不做缓存，确保梯度正确传回 ESM
+            x = self.esm(seqs)
+
         # 下游适配
         x = self.adapter(x)
         x = F.relu(x)
