@@ -15,10 +15,10 @@ embed = 1280          # 仅 legacy 模式使用
 hidden = 128
 out_dim = 64
 mode = "online_esm"   # 切换到在线 ESM2 模式：online_esm / legacy
-freeze_esm = true     # 仅做特征抽取，不微调 ESM（use_lora=false 时生效）
+freeze_esm = false    # 设为 false：允许端到端微调整个 ESM2 backbone
 pooling = "mean"      # ESM2 表示聚合方式：mean / cls
 model_name = "facebook/esm2_t6_8M_UR50D"  # 使用更小的 ESM2 8M模型， esm2_t6_8M_UR50D/esm2_t12_35M_UR50D/esm2_t30_150M_UR50D
-use_lora = true      # 关闭 LoRA，仅做冻结特征抽取
+use_lora = false      # 设为 false：不再只训练 LoRA，改为直接全参数微调 ESM2
 lora_r = 4            # 预留参数（当前不用）
 lora_alpha = 16       # 预留参数（当前不用）
 lora_dropout = 0.05   # 预留参数（当前不用）

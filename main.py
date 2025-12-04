@@ -76,23 +76,27 @@ def train(model, train_loader, test_loader, device, lr=0.001, num_epochs=10, lor
 
     criterion = nn.CrossEntropyLoss()
 
-    # 若指定了 lora_lr，则为 LoRA 参数单独设置更小的学习率
+    # 若指定了 lora_lr：视作「ESM/LoRA 专用小学习率」
+    # - 所有属于 ESM backbone（参数名中包含 ".esm."）以及 LoRA（参数名中包含 "lora_"）的参数，
+    #   使用 lora_lr
+    # - 其余下游模块（GNN/TAN/MLP 等）使用 lr
     if lora_lr is not None:
-        lora_params = []
+        esm_lora_params = []
         other_params = []
         for name, p in model.named_parameters():
             if not p.requires_grad:
                 continue
-            # LoRA 权重名称中包含 "lora_"（如 lora_A.default.weight / lora_B.default.weight）
-            if "lora_" in name:
-                lora_params.append(p)
+            # ESM backbone 参数名：链路中包含 ".esm."
+            # LoRA 参数名：包含 "lora_"
+            if (".esm." in name) or ("lora_" in name):
+                esm_lora_params.append(p)
             else:
                 other_params.append(p)
 
         optimizer = optim.Adam(
             [
                 {"params": other_params, "lr": lr},
-                {"params": lora_params, "lr": lora_lr},
+                {"params": esm_lora_params, "lr": lora_lr},
             ]
         )
     else:
