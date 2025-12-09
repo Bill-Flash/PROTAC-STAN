@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv, MessagePassing, global_max_pool
+from torch_geometric.nn import GCNConv, MessagePassing, global_max_pool, GINConv
 from torch_geometric.utils import add_self_loops, degree
 
 from tan import TAN
@@ -101,32 +101,53 @@ class EdgedGCNConv(MessagePassing):
         )
 
 
+class EdgedGINConv(MessagePassing):
+    """GINConv with edge features: message = h_u + edge_mlp(edge_attr)"""
+    def __init__(self, in_channels, out_channels, edge_dim, eps=0.0):
+        super(EdgedGINConv, self).__init__(aggr='add')
+        self.nn = nn.Sequential(
+            nn.Linear(in_channels, out_channels),
+            nn.ReLU(),
+            nn.Linear(out_channels, out_channels)
+        )
+        self.edge_mlp = nn.Linear(edge_dim, in_channels)
+        self.eps = eps
+
+    def forward(self, x, edge_index, edge_attr):
+        edge_index, _ = add_self_loops(edge_index, num_nodes=x.size(0))
+        self_loop_attr = torch.zeros((x.size(0), edge_attr.size(1)), dtype=edge_attr.dtype, device=edge_attr.device)
+        edge_attr = torch.cat((edge_attr, self_loop_attr), dim=0)
+        
+        out = self.propagate(edge_index, x=x, edge_attr=edge_attr, size=(x.size(0), x.size(0)))
+        out = self.nn((1 + self.eps) * x + out)
+        return out
+
+    def message(self, x_j, edge_attr):
+        return x_j + self.edge_mlp(edge_attr)
+
+
 class MolecularEncoder(nn.Module):
-    ## TODO: 需要修改，使用GINConv代替EdgedGCNConv
-    def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, fingerprint_dim=166):
+    def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, fingerprint_dim=166, dropout=0.1):
         super(MolecularEncoder, self).__init__()
         self.lin = nn.Linear(num_mol_features, embedding_dim)
         self.bn = nn.BatchNorm1d(embedding_dim)
-        self.conv1 = EdgedGCNConv(embedding_dim, hidden_channels, edge_dim)
-        self.conv2 = EdgedGCNConv(hidden_channels, embedding_dim, edge_dim)
-        
-        # MACCS指纹特征处理
-        self.fingerprint_lin = nn.Linear(fingerprint_dim, embedding_dim)  # 将166维MACCS指纹映射到64维
+        # 原始 GIN：只使用节点特征，不使用边特征
+        self.conv1 = GINConv(nn.Sequential(nn.Linear(embedding_dim, hidden_channels), nn.ReLU(), nn.Dropout(dropout), nn.Linear(hidden_channels, hidden_channels)))
+        self.conv2 = GINConv(nn.Sequential(nn.Linear(hidden_channels, embedding_dim), nn.ReLU(), nn.Dropout(dropout), nn.Linear(embedding_dim, embedding_dim)))
+        self.fingerprint_lin = nn.Linear(fingerprint_dim, embedding_dim)
 
     def forward(self, data, fingerprint=None):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
         x = self.lin(x)
         x = self.bn(x)
         x = F.relu(x)
-        x = self.conv1(x, edge_index, edge_attr)
+        x = self.conv1(x, edge_index)
         x = F.relu(x)
-        x = self.conv2(x, edge_index, edge_attr)
-        x = global_max_pool(x, batch)  # [batch_size, 64]
+        x = self.conv2(x, edge_index)
+        x = global_max_pool(x, batch)
         
-        # 融合MACCS指纹特征
         if fingerprint is not None:
-            fingerprint_embed = self.fingerprint_lin(fingerprint)  # [batch_size, 166] -> [batch_size, 64]
-            x = x + fingerprint_embed  # 相加融合，保持64维输出
+            x = x + self.fingerprint_lin(fingerprint)
         
         return x
 
