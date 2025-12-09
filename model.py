@@ -277,10 +277,6 @@ class OnlineESMProteinEncoder(nn.Module):
     ):
         super().__init__()
 
-        # 若启用 LoRA，则总是关闭 "冻结 + 缓存" 模式，以保证梯度能回传到 LoRA 层
-        if use_lora:
-            freeze_esm = False
-
         self.esm = ESM2Base150M(
             model_name=model_name,
             freeze=freeze_esm,
@@ -293,16 +289,33 @@ class OnlineESMProteinEncoder(nn.Module):
         self.adapter = nn.Linear(self.esm.hidden_size, hidden)
         self.fc = nn.Linear(hidden, out_dim)
 
-        # 缓存仅在 ESM 完全冻结、且未使用 LoRA 时启用：每条唯一序列只计算一次 ESM 表征
+        # 运行时缓存：用于在“ESM(+LoRA) 完全冻结”时加速重复序列的前向计算
         self.freeze_esm = freeze_esm
-        self.embedding_cache = {} if (freeze_esm and not use_lora) else None  # dict[str, torch.Tensor] | None
+        # 始终创建缓存字典，是否实际使用由 _can_use_cache() 决定
+        self.embedding_cache: dict[str, torch.Tensor] | None = {}
+
+    def _can_use_cache(self) -> bool:
+        """
+        只有当 ESM 模块（包含 LoRA 在内）的所有参数都不需要梯度时才允许使用缓存。
+        这样可以支持：
+        - Stage 1：训练 LoRA（某些参数 requires_grad=True）→ 不使用缓存
+        - Stage 2：ESM+LoRA 全部冻结（requires_grad=False）→ 使用缓存
+        """
+        if self.embedding_cache is None:
+            return False
+
+        # 只检查 ESM 模块内部的参数（包括 LoRA）
+        for p in self.esm.parameters():
+            if p.requires_grad:
+                return False
+        return True
 
     def forward(self, seqs: list[str]):
         """
         seqs: List[str]，当前 batch 的氨基酸序列
         """
-        # 冻结 + 缓存模式：每条唯一序列只跑一次 ESM
-        if self.freeze_esm and self.embedding_cache is not None:
+        # 冻结 + 缓存模式：每条唯一序列只跑一次 ESM(+LoRA)
+        if self._can_use_cache():
             device = next(self.adapter.parameters()).device
             hidden_size = self.esm.hidden_size
 

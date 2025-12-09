@@ -1,0 +1,43 @@
+[model]
+desc = 'two-stage finetune parameters'
+type = "PROTAC-STAN-2Stage"
+seed = 21332
+
+[model.protac]
+feature = 146          # 节点特征维度
+embed = 64
+hidden = 128
+edge_dim = 3
+fingerprint_dim = 166  # MACCS 指纹维度
+
+[model.protein]
+embed = 1280           # 仅 legacy 模式使用
+hidden = 128
+out_dim = 64
+mode = "online_esm"    # legacy / online_esm
+freeze_esm = false     # 基准值：Stage1/Stage2 内部会分别覆盖
+pooling = "mean"       # mean / cls
+model_name = "facebook/esm2_t6_8M_UR50D"
+use_lora = true        # 基准值：Stage1 强制覆盖为 false，Stage2 保持为 true
+lora_r = 4
+lora_alpha = 16
+lora_dropout = 0.05
+
+[model.tan]
+in_dims = [1, 1, 1]
+heads = 2
+
+[model.clf]
+embed = 192
+hidden = 64
+class = 2
+
+[train]
+desc = 'two-stage train parameters'
+learning_rate = 0.0005       # 下游模块学习率
+lora_learning_rate = 0.00001 # LoRA 小学习率
+batch_size = 4
+num_epochs = 100
+train_ratio = 0.8
+
+
