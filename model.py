@@ -50,15 +50,14 @@ class PROTAC_STAN(nn.Module):
 
         # 只拼接三对交互项，最终维度为 3 * 64 = 192，对齐 cfg['clf']['embed']
         joint_embedding = torch.cat([pe, pp, ep], dim=1)
-        output = self.mlp(joint_embedding)
+        logits = self.mlp(joint_embedding)
 
-        pred = F.log_softmax(output, dim=1)
-
+        # 返回原始 logits，供 CrossEntropyLoss 使用
         if mode == 'train':
-            return pred
+            return logits
         elif mode == 'eval':
             # 兼容原有接口，注意力图用 None 占位
-            return pred, None
+            return logits, None
         else:
             raise ValueError(f'Unknown mode: {mode}')
         
