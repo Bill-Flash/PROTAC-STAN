@@ -4,7 +4,6 @@ import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, MessagePassing, global_max_pool, GINConv
 from torch_geometric.utils import add_self_loops, degree
 
-from tan import TAN
 # from torch.nn.utils.weight_norm import weight_norm
 
 
@@ -14,9 +13,9 @@ class PROTAC_STAN(nn.Module):
         super(PROTAC_STAN, self).__init__()
         fingerprint_dim = cfg['protac'].get('fingerprint_dim', 166)
         self.protac_encoder = MolecularEncoder(
-            num_mol_features=cfg['protac']['feature'], 
+            num_mol_features=cfg['protac']['feature'],
             embedding_dim=cfg['protac']['embed'],
-            hidden_channels=cfg['protac']['hidden'], 
+            hidden_channels=cfg['protac']['hidden'],
             edge_dim=cfg['protac']['edge_dim'],
             fingerprint_dim=fingerprint_dim  # MACCS指纹维度（从配置读取，默认166）
         )
@@ -31,7 +30,7 @@ class PROTAC_STAN(nn.Module):
             out_dim=cfg['protein']['out_dim'],
         )
 
-        self.tan = TAN(cfg['tan']['in_dims'], cfg['clf']['embed'], cfg['tan']['heads'])
+        # Baseline-B: 只使用两两 Hadamard 交互项拼接，得到 3 * 64 = 192 维
         self.mlp = nn.Sequential(
             nn.Linear(cfg['clf']['embed'], cfg['clf']['hidden']),
             nn.BatchNorm1d(cfg['clf']['hidden']),
@@ -40,25 +39,26 @@ class PROTAC_STAN(nn.Module):
         )
 
     def forward(self, protac, e3_ligase, poi, mode='train', fingerprint=None):
-        protac_embedding = self.protac_encoder(protac, fingerprint=fingerprint)
-        e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)
-        poi_embedding = self.poi_encoder(poi)
-        
-        atts = None
-        
-        joint_embedding, atts = self.tan(
-            protac_embedding.unsqueeze(2),
-            e3_ligase_embedding.unsqueeze(2),
-            poi_embedding.unsqueeze(2),
-        )
+        protac_embedding = self.protac_encoder(protac, fingerprint=fingerprint)   # [B, 64]
+        e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)                   # [B, 64]
+        poi_embedding = self.poi_encoder(poi)                                     # [B, 64]
+
+        # 显式交互：两两 Hadamard 乘积
+        pe = protac_embedding * e3_ligase_embedding   # [B, 64]
+        pp = protac_embedding * poi_embedding         # [B, 64]
+        ep = e3_ligase_embedding * poi_embedding      # [B, 64]
+
+        # 只拼接三对交互项，最终维度为 3 * 64 = 192，对齐 cfg['clf']['embed']
+        joint_embedding = torch.cat([pe, pp, ep], dim=1)
         output = self.mlp(joint_embedding)
 
-        pred =  F.log_softmax(output, dim=1)
+        pred = F.log_softmax(output, dim=1)
 
         if mode == 'train':
             return pred
         elif mode == 'eval':
-            return pred, atts
+            # 兼容原有接口，注意力图用 None 占位
+            return pred, None
         else:
             raise ValueError(f'Unknown mode: {mode}')
         

@@ -159,7 +159,7 @@ def main():
         mode="online",
         project='protac-stan',
         config=cfg,
-        group=f'run_bz{train_cfg["batch_size"]}_lr{train_cfg["learning_rate"]}',
+        group=f'run_CL_bz{train_cfg["batch_size"]}_lr{train_cfg["learning_rate"]}',
     )
 
     wandb.run.summary['model_dir'] = model_dir
