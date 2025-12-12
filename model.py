@@ -12,9 +12,12 @@ class PROTAC_STAN(nn.Module):
     def __init__(self, cfg):
         super(PROTAC_STAN, self).__init__()
         fingerprint_dim = cfg['protac'].get('fingerprint_dim', 166)
+        protac_embed_dim = cfg['protac']['embed']
+        protein_out_dim = cfg['protein']['out_dim']
+
         self.protac_encoder = MolecularEncoder(
             num_mol_features=cfg['protac']['feature'],
-            embedding_dim=cfg['protac']['embed'],
+            embedding_dim=protac_embed_dim,
             hidden_channels=cfg['protac']['hidden'],
             edge_dim=cfg['protac']['edge_dim'],
             fingerprint_dim=fingerprint_dim  # MACCS指纹维度（从配置读取，默认166）
@@ -27,7 +30,7 @@ class PROTAC_STAN(nn.Module):
         self.poi_encoder = ProteinEncoder(
             embedding_dim=cfg['protein']['embed'],
             hidden=cfg['protein']['hidden'],
-            out_dim=cfg['protein']['out_dim'],
+            out_dim=protein_out_dim,
         )
 
         # Baseline-B: 只使用两两 Hadamard 交互项拼接，得到 3 * 64 = 192 维
@@ -38,7 +41,14 @@ class PROTAC_STAN(nn.Module):
             nn.Linear(cfg['clf']['hidden'], cfg['clf']['class']),
         )
 
-    def forward(self, protac, e3_ligase, poi, mode='train', fingerprint=None):
+        # CLIP-style 对比学习投影头：将 PROTAC 和 (E3, POI) 映射到同一对比空间
+        contrast_cfg = cfg.get('contrast', {})
+        proj_dim = contrast_cfg.get('proj_dim', protein_out_dim)
+        self.protac_proj = nn.Linear(protac_embed_dim, proj_dim)
+        # (E3, POI) 先拼接成 2 * protein_out_dim
+        self.et_proj = nn.Linear(2 * protein_out_dim, proj_dim)
+
+    def forward(self, protac, e3_ligase, poi, mode='train', fingerprint=None, return_embeddings=False):
         protac_embedding = self.protac_encoder(protac, fingerprint=fingerprint)   # [B, 64]
         e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)                   # [B, 64]
         poi_embedding = self.poi_encoder(poi)                                     # [B, 64]
@@ -52,7 +62,15 @@ class PROTAC_STAN(nn.Module):
         joint_embedding = torch.cat([pe, pp, ep], dim=1)
         logits = self.mlp(joint_embedding)
 
-        # 返回原始 logits，供 CrossEntropyLoss 使用
+        # CLIP-style 对比学习用的投影向量（L2 归一化）
+        et_embedding = torch.cat([e3_ligase_embedding, poi_embedding], dim=1)  # [B, 2 * protein_out_dim]
+        z_protac = F.normalize(self.protac_proj(protac_embedding), dim=-1)     # [B, proj_dim]
+        z_et = F.normalize(self.et_proj(et_embedding), dim=-1)                 # [B, proj_dim]
+
+        # 返回原始 logits，供 CrossEntropyLoss 使用；可选返回对比学习 embedding
+        if return_embeddings:
+            return logits, z_protac, z_et
+
         if mode == 'train':
             return logits
         elif mode == 'eval':
