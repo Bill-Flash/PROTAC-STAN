@@ -41,12 +41,17 @@ class PROTAC_STAN(nn.Module):
             nn.Linear(cfg['clf']['hidden'], cfg['clf']['class']),
         )
 
-        # CLIP-style 对比学习投影头：将 PROTAC 和 (E3, POI) 映射到同一对比空间
+        # CLIP-style 三模态对比学习投影头：
+        # 将 PROTAC / E3 / POI 以及二元复合体分别映射到同一对比空间
         contrast_cfg = cfg.get('contrast', {})
         proj_dim = contrast_cfg.get('proj_dim', protein_out_dim)
         self.protac_proj = nn.Linear(protac_embed_dim, proj_dim)
-        # (E3, POI) 先拼接成 2 * protein_out_dim
-        self.et_proj = nn.Linear(2 * protein_out_dim, proj_dim)
+        self.e3_proj = nn.Linear(protein_out_dim, proj_dim)
+        self.poi_proj = nn.Linear(protein_out_dim, proj_dim)
+        # 二元复合体模态：PE（PROTAC-E3）、PO（PROTAC-POI）
+        # pe、pp 的维度与单体 embedding 一致（默认 64），因此也映射到相同 proj_dim
+        self.pe_proj = nn.Linear(protein_out_dim, proj_dim)
+        self.po_proj = nn.Linear(protein_out_dim, proj_dim)
 
     def forward(self, protac, e3_ligase, poi, mode='train', fingerprint=None, return_embeddings=False):
         protac_embedding = self.protac_encoder(protac, fingerprint=fingerprint)   # [B, 64]
@@ -62,14 +67,18 @@ class PROTAC_STAN(nn.Module):
         joint_embedding = torch.cat([pe, pp, ep], dim=1)
         logits = self.mlp(joint_embedding)
 
-        # CLIP-style 对比学习用的投影向量（L2 归一化）
-        et_embedding = torch.cat([e3_ligase_embedding, poi_embedding], dim=1)  # [B, 2 * protein_out_dim]
-        z_protac = F.normalize(self.protac_proj(protac_embedding), dim=-1)     # [B, proj_dim]
-        z_et = F.normalize(self.et_proj(et_embedding), dim=-1)                 # [B, proj_dim]
+        # CLIP-style 三模态 + 复合模态 对比学习用的投影向量（L2 归一化）
+        z_protac = F.normalize(self.protac_proj(protac_embedding), dim=-1)         # [B, proj_dim]
+        z_e3 = F.normalize(self.e3_proj(e3_ligase_embedding), dim=-1)              # [B, proj_dim]
+        z_poi = F.normalize(self.poi_proj(poi_embedding), dim=-1)                  # [B, proj_dim]
+        # 二元复合体模态：PE ↔ POI、PO ↔ E3
+        z_pe = F.normalize(self.pe_proj(pe), dim=-1)                                # [B, proj_dim]
+        z_po = F.normalize(self.po_proj(pp), dim=-1)                                # [B, proj_dim]
 
         # 返回原始 logits，供 CrossEntropyLoss 使用；可选返回对比学习 embedding
         if return_embeddings:
-            return logits, z_protac, z_et
+            # 返回三单体 + 两个二元复合体的投影向量
+            return logits, z_protac, z_e3, z_poi, z_pe, z_po
 
         if mode == 'train':
             return logits

@@ -66,14 +66,14 @@ def test(model, test_loader, device):
     return accuracy, loss, roc_auc, f1
 
 
-def clip_contrastive_loss(z_protac, z_et, labels, temperature=0.1, only_positive=True):
+def clip_contrastive_loss(z_a, z_b, labels, temperature=0.1, only_positive=True):
     """
-    CLIP-style 对比损失：
-    - anchor: PROTAC 表征 z_protac
-    - 对齐对象: (E3, POI) 联合表征 z_et
+    CLIP-style 对比损失（任意两模态之间）：
+    - anchor: 第一个模态表征 z_a
+    - 对齐对象: 第二个模态表征 z_b
     - 只在 label == 1 的样本上计算（only_positive=True）
     """
-    device = z_protac.device
+    device = z_a.device
 
     if only_positive:
         pos_mask = (labels == 1)
@@ -81,24 +81,26 @@ def clip_contrastive_loss(z_protac, z_et, labels, temperature=0.1, only_positive
         # 正样本太少（<2）时跳过对比损失，避免退化为无负样本的情况
         if num_pos < 2:
             return torch.tensor(0.0, device=device)
-        z_protac = z_protac[pos_mask]
-        z_et = z_et[pos_mask]
+        z_a = z_a[pos_mask]
+        z_b = z_b[pos_mask]
 
     # [N, d] @ [d, N] -> [N, N]
-    sim = torch.matmul(z_protac, z_et.t()) / temperature
+    sim = torch.matmul(z_a, z_b.t()) / temperature
     targets = torch.arange(sim.size(0), device=device)
 
-    # PROTAC -> (E3, POI)
-    loss_p2et = F.cross_entropy(sim, targets)
-    # (E3, POI) -> PROTAC
-    loss_et2p = F.cross_entropy(sim.t(), targets)
+    # 模态 A -> 模态 B
+    loss_a2b = F.cross_entropy(sim, targets)
+    # 模态 B -> 模态 A
+    loss_b2a = F.cross_entropy(sim.t(), targets)
 
-    loss = 0.5 * (loss_p2et + loss_et2p)
+    loss = 0.5 * (loss_a2b + loss_b2a)
     return loss
 
 
 def train(model, train_loader, test_loader, device, lr=0.001, num_epochs=10,
-          contrast_weight=0.0, contrast_temperature=0.1, contrast_only_positive=True):
+          contrast_weight=0.0, contrast_temperature=0.1, contrast_only_positive=True,
+          lambda_pe=1.0, lambda_po=1.0, lambda_eo=1.0,
+          lambda_pe_poi=0.0, lambda_po_e3=0.0):
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
@@ -127,8 +129,8 @@ def train(model, train_loader, test_loader, device, lr=0.001, num_epochs=10,
 
             optimizer.zero_grad()
 
-            # 训练阶段：同时获取分类 logits 和对比学习 embedding
-            logits, z_protac, z_et = model(
+            # 训练阶段：同时获取分类 logits 和三模态 + 复合模态 对比学习 embedding
+            logits, z_protac, z_e3, z_poi, z_pe, z_po = model(
                 protac_data, e3_ligase_data, poi_data,
                 fingerprint=fingerprint,
                 return_embeddings=True
@@ -137,11 +139,52 @@ def train(model, train_loader, test_loader, device, lr=0.001, num_epochs=10,
             ce_loss = criterion(logits, label)
 
             if contrast_weight > 0.0:
-                contrast_loss = clip_contrastive_loss(
-                    z_protac, z_et, label,
+                # 三模态共享空间 + 三两成对对比（单体）
+                loss_pe = clip_contrastive_loss(
+                    z_protac, z_e3, label,
                     temperature=contrast_temperature,
                     only_positive=contrast_only_positive
                 )
+                loss_po = clip_contrastive_loss(
+                    z_protac, z_poi, label,
+                    temperature=contrast_temperature,
+                    only_positive=contrast_only_positive
+                )
+                loss_eo = clip_contrastive_loss(
+                    z_e3, z_poi, label,
+                    temperature=contrast_temperature,
+                    only_positive=contrast_only_positive
+                )
+
+                # 复合模态：二元复合体 ↔ 第三方
+                # (PE) PROTAC-E3 ↔ POI
+                loss_pe_poi = clip_contrastive_loss(
+                    z_pe, z_poi, label,
+                    temperature=contrast_temperature,
+                    only_positive=contrast_only_positive
+                )
+                # (PO) PROTAC-POI ↔ E3
+                loss_po_e3 = clip_contrastive_loss(
+                    z_po, z_e3, label,
+                    temperature=contrast_temperature,
+                    only_positive=contrast_only_positive
+                )
+
+                # 根据权重做加权平均，保证整体尺度稳定
+                total_lambda = (
+                    lambda_pe + lambda_po + lambda_eo +
+                    lambda_pe_poi + lambda_po_e3
+                )
+                if total_lambda > 0.0:
+                    contrast_loss = (
+                        lambda_pe * loss_pe +
+                        lambda_po * loss_po +
+                        lambda_eo * loss_eo +
+                        lambda_pe_poi * loss_pe_poi +
+                        lambda_po_e3 * loss_po_e3
+                    ) / total_lambda
+                else:
+                    contrast_loss = torch.tensor(0.0, device=device)
             else:
                 contrast_loss = torch.tensor(0.0, device=device)
 
@@ -216,6 +259,7 @@ def main():
     cfg = toml.load('config.toml')
     model_cfg = cfg['model']
     train_cfg = cfg['train']
+    contrast_cfg = model_cfg.get('contrast', {})
 
     setup_seed(model_cfg['seed'])
     
@@ -224,7 +268,7 @@ def main():
         project='protac-stan',
         config=cfg,
         # group=f'run_CL_bz{train_cfg["batch_size"]}_lr{train_cfg["learning_rate"]}',
-        group=f'run_CL_CLIP_B_lr{train_cfg["learning_rate"]}',
+        group=f'run_CL_CLIP_trimodal_lr{train_cfg["learning_rate"]}',
     )
 
     wandb.run.summary['model_dir'] = model_dir
@@ -250,6 +294,11 @@ def main():
         contrast_weight=train_cfg.get('contrast_weight', 0.0),
         contrast_temperature=train_cfg.get('contrast_temperature', 0.1),
         contrast_only_positive=train_cfg.get('contrast_only_positive', True),
+        lambda_pe=contrast_cfg.get('lambda_pe', 1.0),
+        lambda_po=contrast_cfg.get('lambda_po', 1.0),
+        lambda_eo=contrast_cfg.get('lambda_eo', 1.0),
+        lambda_pe_poi=contrast_cfg.get('lambda_pe_poi', 0.0),
+        lambda_po_e3=contrast_cfg.get('lambda_po_e3', 0.0),
     )
 
     torch.save(model, f'{model_dir}/model.pt') # save full model (state_dict + architecture)    

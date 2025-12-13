@@ -24,6 +24,18 @@ embed = 192
 hidden = 64
 class = 2
 
+[model.contrast]
+# 三模态共享对比空间维度（默认等于 protein.out_dim）
+proj_dim = 64
+# 三对单体模态（PROTAC-E3 / PROTAC-POI / E3-POI）的相对权重
+lambda_pe = 1
+lambda_po = 2
+lambda_eo = 0
+# 二元复合体 ↔ 第三方 模态的相对权重
+# (PE) PROTAC-E3 ↔ POI, (PO) PROTAC-POI ↔ E3
+lambda_pe_poi = 0
+lambda_po_e3 = 1
+
 
 [train]
 desc = 'train parameters'
