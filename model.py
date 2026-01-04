@@ -12,14 +12,15 @@ class PROTAC_STAN(nn.Module):
     def __init__(self, cfg):
         super(PROTAC_STAN, self).__init__()
         fingerprint_dim = cfg['protac'].get('fingerprint_dim', 166)
-        protac_embed_dim = cfg['protac']['embed']
+        protac_embed_dim = cfg['protac']['embed']  # PROTAC encoder 输出维度
         protein_out_dim = cfg['protein']['out_dim']
 
-        self.protac_encoder = MolecularEncoder(
+        # Bag-of-atoms baseline：不做图卷积，只对节点特征做图级聚合 + MLP
+        # 如需恢复原来的 GNN 编码器，可将下面一行改回 MolecularEncoder(...)
+        self.protac_encoder = BagOfAtomsEncoder(
             num_mol_features=cfg['protac']['feature'],
             embedding_dim=protac_embed_dim,
             hidden_channels=cfg['protac']['hidden'],
-            edge_dim=cfg['protac']['edge_dim'],
             fingerprint_dim=fingerprint_dim  # MACCS指纹维度（从配置读取，默认166）
         )
         self.e3_ligase_encoder = ProteinEncoder(
@@ -54,26 +55,43 @@ class PROTAC_STAN(nn.Module):
         self.po_proj = nn.Linear(protein_out_dim, proj_dim)
 
     def forward(self, protac, e3_ligase, poi, mode='train', fingerprint=None, return_embeddings=False):
-        protac_embedding = self.protac_encoder(protac, fingerprint=fingerprint)   # [B, 64]
-        e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)                   # [B, 64]
-        poi_embedding = self.poi_encoder(poi)                                     # [B, 64]
+        """
+        方案二：在共享 encoder 上“层内解耦”：
+        - encoder 内部划分 shared_block / ce_block / contrast_block
+        - 分类只用 ce_block 输出
+        - 对比只用 contrast_block 输出
+        """
+        # -------------------------
+        # 1) encoder 前向：得到 shared / ce / contrast 三路特征
+        # -------------------------
+        _, protac_ce, protac_contrast = self.protac_encoder(protac, fingerprint=fingerprint)  # [B, 64] * 2
+        _, e3_ce, e3_contrast = self.e3_ligase_encoder(e3_ligase)                             # [B, 64] * 2
+        _, poi_ce, poi_contrast = self.poi_encoder(poi)                                       # [B, 64] * 2
 
-        # 显式交互：两两 Hadamard 乘积
-        pe = protac_embedding * e3_ligase_embedding   # [B, 64]
-        pp = protac_embedding * poi_embedding         # [B, 64]
-        ep = e3_ligase_embedding * poi_embedding      # [B, 64]
+        # -------------------------
+        # 2) 分类分支：只用 CE 头做两两 Hadamard
+        # -------------------------
+        pe_ce = protac_ce * e3_ce     # [B, 64]
+        pp_ce = protac_ce * poi_ce    # [B, 64]
+        ep_ce = e3_ce * poi_ce        # [B, 64]
 
         # 只拼接三对交互项，最终维度为 3 * 64 = 192，对齐 cfg['clf']['embed']
-        joint_embedding = torch.cat([pe, pp, ep], dim=1)
+        joint_embedding = torch.cat([pe_ce, pp_ce, ep_ce], dim=1)
         logits = self.mlp(joint_embedding)
 
-        # CLIP-style 三模态 + 复合模态 对比学习用的投影向量（L2 归一化）
-        z_protac = F.normalize(self.protac_proj(protac_embedding), dim=-1)         # [B, proj_dim]
-        z_e3 = F.normalize(self.e3_proj(e3_ligase_embedding), dim=-1)              # [B, proj_dim]
-        z_poi = F.normalize(self.poi_proj(poi_embedding), dim=-1)                  # [B, proj_dim]
-        # 二元复合体模态：PE ↔ POI、PO ↔ E3
-        z_pe = F.normalize(self.pe_proj(pe), dim=-1)                                # [B, proj_dim]
-        z_po = F.normalize(self.po_proj(pp), dim=-1)                                # [B, proj_dim]
+        # -------------------------
+        # 3) 对比分支：只用 contrast 头 + 投影头
+        # -------------------------
+        # 单体模态
+        z_protac = F.normalize(self.protac_proj(protac_contrast), dim=-1)    # [B, proj_dim]
+        z_e3 = F.normalize(self.e3_proj(e3_contrast), dim=-1)                # [B, proj_dim]
+        z_poi = F.normalize(self.poi_proj(poi_contrast), dim=-1)             # [B, proj_dim]
+
+        # 复合模态：二元复合体基于 contrast 表征构造
+        pe_contrast = protac_contrast * e3_contrast                          # [B, 64]
+        po_contrast = protac_contrast * poi_contrast                         # [B, 64]
+        z_pe = F.normalize(self.pe_proj(pe_contrast), dim=-1)                # [B, proj_dim]
+        z_po = F.normalize(self.po_proj(po_contrast), dim=-1)                # [B, proj_dim]
 
         # 返回原始 logits，供 CrossEntropyLoss 使用；可选返回对比学习 embedding
         if return_embeddings:
@@ -178,14 +196,92 @@ class MolecularEncoder(nn.Module):
         return x
 
 
+class BagOfAtomsEncoder(nn.Module):
+    """
+    Bag-of-atoms baseline:
+    - 不做图卷积，只对节点特征做图级聚合（global pooling）再过 MLP
+    - 输出维度与 MolecularEncoder 保持一致（embedding_dim），便于公平对比
+    """
+    def __init__(self, num_mol_features, embedding_dim, hidden_channels, fingerprint_dim=166, dropout=0.1):
+        """
+        在 Bag-of-atoms encoder 内部做“层内解耦”：
+        - shared_block: 图级聚合 + 低层 MLP，输出 hidden 维 shared 表示
+        - ce_block:  shared -> embedding_dim，分类专用
+        - contrast_block: shared -> embedding_dim，对比专用
+        """
+        super(BagOfAtomsEncoder, self).__init__()
+        hidden = hidden_channels if hidden_channels is not None else embedding_dim
+
+        # shared_block：作用于 pooled 图级向量的低层 MLP
+        self.shared_mlp = nn.Sequential(
+            nn.Linear(num_mol_features, hidden),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
+
+        # ce_block：分类专用高层
+        self.ce_mlp = nn.Linear(hidden, embedding_dim)
+        # contrast_block：对比专用高层
+        self.contrast_mlp = nn.Linear(hidden, embedding_dim)
+
+        # 指纹映射到 shared 维度，在 shared 层融合
+        self.fingerprint_lin = nn.Linear(fingerprint_dim, hidden)
+
+    def forward(self, data, fingerprint=None):
+        """
+        返回三路特征：
+        - shared:   encoder 共享底层表示（hidden 维）
+        - ce_feat:  分类专用高层表示（embedding_dim 维）
+        - con_feat: 对比专用高层表示（embedding_dim 维）
+        """
+        # 这里只使用节点特征，不使用 edge_index / edge_attr
+        x, batch = data.x, data.batch                    # [num_nodes, num_mol_features], [num_nodes]
+
+        # 图级聚合：bag-of-atoms，可以理解为对所有原子做 pooling 得到整体表示
+        mol_x = global_max_pool(x, batch)                # [B, num_mol_features]
+        # 如果你想做“求和池化”版本，可以把上面一行替换成 global_add_pool(x, batch)
+
+        # shared_block：低层变换
+        shared = self.shared_mlp(mol_x)                  # [B, hidden]
+
+        # 可选：在 shared 层融入 MACCS 指纹信息
+        if fingerprint is not None:
+            shared = shared + self.fingerprint_lin(fingerprint)  # [B, hidden]
+
+        # ce / contrast 两条私有高层头
+        ce_feat = self.ce_mlp(shared)                    # [B, embedding_dim]
+        con_feat = self.contrast_mlp(shared)             # [B, embedding_dim]
+
+        return shared, ce_feat, con_feat
+
+
 class ProteinEncoder(nn.Module):
     def __init__(self, embedding_dim, hidden, out_dim):
         super(ProteinEncoder, self).__init__()
+        """
+        Protein encoder 的“层内解耦”版：
+        - shared_block: adapter，将 ESM embedding 映射到 hidden
+        - ce_block:     hidden -> out_dim，分类专用
+        - contrast_block: hidden -> out_dim，对比专用
+        """
+        # shared_block
         self.adapter = nn.Linear(embedding_dim, hidden)
-        self.fc = nn.Linear(hidden, out_dim)
+        # 分类专用高层
+        self.ce_head = nn.Linear(hidden, out_dim)
+        # 对比专用高层
+        self.contrast_head = nn.Linear(hidden, out_dim)
 
     def forward(self, x):
-        x = self.adapter(x)
-        x = F.relu(x)
-        x = self.fc(x)
-        return x
+        """
+        返回三路特征：
+        - shared:  encoder 共享底层表示（hidden 维）
+        - ce_out:  分类专用高层表示（out_dim 维）
+        - con_out: 对比专用高层表示（out_dim 维）
+        """
+        shared = self.adapter(x)
+        shared = F.relu(shared)
+
+        ce_out = self.ce_head(shared)
+        con_out = self.contrast_head(shared)
+
+        return shared, ce_out, con_out
