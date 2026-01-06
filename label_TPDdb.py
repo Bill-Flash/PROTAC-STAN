@@ -251,9 +251,17 @@ for _, r in merged_df.iterrows():
 
 clean_df = pd.DataFrame(expanded_records)
 
+# 统一列名为 data.py 中使用的命名
+rename_map = {
+    "Target ID": "Uniprot",
+    "Ligase Uniprot": "E3 ligase Uniprot",
+    "Label": "label",
+    "SMILES": "Smiles",
+}
+clean_df = clean_df.rename(columns=rename_map)
 
 # 保存文件：输出已经拆分好 Target ID 的版本
 clean_df.to_csv("data/TPDdb/protac_label_with_main.csv", index=False)
 
 print(f"处理完成，标注条数: {len(clean_df)}")
-print(clean_df["Label"].value_counts())
+print(clean_df["label"].value_counts())

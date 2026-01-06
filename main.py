@@ -157,7 +157,7 @@ def main():
     
     wandb.init(
         mode="online",
-        project='protac-stan',
+        project='protac-stan-TPDdb',
         config=cfg,
         group=f'run_bz{train_cfg["batch_size"]}_lr{train_cfg["learning_rate"]}',
     )
@@ -171,7 +171,7 @@ def main():
     print(device)
     
     train_loader, test_loader = PROTACLoader(
-        root='data/protacdb3', name='protac_maccs', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, 
+        root='data/TPDdb', name='protac_maccs', batch_size=train_cfg['batch_size'], collate_fn=collate_fn, 
         train_ratio=train_cfg['train_ratio'], seed=model_cfg['seed'])
 
     model = PROTAC_STAN(model_cfg)
