@@ -112,7 +112,14 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
             print(f'Test size: {len(test_dataset)}')
             
             # 创建 DataLoader
-            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn) if train_dataset else None
+            # 训练集使用 drop_last=True，避免出现 batch_size=1 导致 BatchNorm 报错
+            train_loader = DataLoader(
+                train_dataset,
+                batch_size=batch_size,
+                shuffle=True,
+                collate_fn=collate_fn,
+                drop_last=True
+            ) if train_dataset else None
             test_loader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
             
             return train_loader, test_loader
@@ -207,7 +214,14 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
         except Exception as e:
             print(f'Warning: Failed to save split CSV files: {e}')
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
+    # 训练集使用 drop_last=True，避免出现 batch_size=1 导致 BatchNorm 报错
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=collate_fn,
+        drop_last=True
+    )
     test_loader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
 
     return train_loader, test_loader

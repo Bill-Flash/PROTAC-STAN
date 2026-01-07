@@ -28,6 +28,6 @@ class = 2
 [train]
 desc = 'train parameters'
 learning_rate = 0.0005
-batch_size = 4
+batch_size = 64
 num_epochs = 100
 train_ratio = 0.8
