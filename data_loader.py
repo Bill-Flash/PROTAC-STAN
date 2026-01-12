@@ -123,8 +123,15 @@ def PROTACLoader(
                     train_dataset, val_dataset = torch.utils.data.random_split(
                         train_dataset, [train_size, val_size], generator=generator
                     )
+
+            # 按 SMILES+POI 去重：确保验证集/测试集中不包含训练集中已出现的样本
+            if train_dataset is not None:
+                train_keys = {_sample_key(data) for data in train_dataset}
+                if val_dataset is not None:
+                    val_dataset = [data for data in val_dataset if _sample_key(data) not in train_keys]
+                test_dataset = [data for data in test_dataset if _sample_key(data) not in train_keys]
             
-            print('Using fixed split from CSV files:')
+            print('Using fixed split from CSV files (after de-dup w.r.t. train):')
             if train_dataset:
                 print(f'Train size: {len(train_dataset)}')
             if val_dataset:
@@ -227,12 +234,13 @@ def PROTACLoader(
     print('Train size: ', len(train_dataset))
     print('Val size: ', len(val_dataset))
     print('Test size: ', len(test_dataset))
-
-    # Drop overlapping data in test set from train set（按 SMILES+POI 去重）
+    
+    # Drop overlapping data in val/test set from train set（按 SMILES+POI 去重）
     train_keys = {_sample_key(data) for data in train_dataset}
+    val_dataset = [data for data in val_dataset if _sample_key(data) not in train_keys]
     test_dataset = [data for data in test_dataset if _sample_key(data) not in train_keys]
     
-    print('Dropped overlapping (from test vs train):')
+    print('Dropped overlapping samples from val/test vs train:')
     print('Train size: ', len(train_dataset))
     print('Val size: ', len(val_dataset))
     print('Test size: ', len(test_dataset))
