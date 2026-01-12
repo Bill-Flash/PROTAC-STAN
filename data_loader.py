@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 from torch_geometric.data import Batch
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 from data import PROTACData
 
@@ -58,8 +59,18 @@ class PROTACDataset(Dataset):
         }
         return item
     
-
-def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, collate_fn=collate_fn, train_ratio=0.8, use_smiles_split=False, seed=None, save_split_csv=True):
+    
+def PROTACLoader(
+    root='data/TPDdb',
+    name='protac_maccs',
+    batch_size=2,
+    collate_fn=collate_fn,
+    train_ratio=0.8,
+    val_ratio=0.1,
+    use_smiles_split=False,
+    seed=None,
+    save_split_csv=True
+):
     """
     Args:
         use_smiles_split: 如果为 True，使用 train/test_compound_smiles.csv 进行划分
@@ -105,10 +116,26 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
             
             train_dataset = Subset(dataset, train_indices) if train_indices else None
             test_dataset = Subset(dataset, test_indices)
+
+            # 在基于 SMILES 的固定划分下，从训练集中再划出验证集（保持整体约 8:1:1）
+            val_dataset = None
+            if train_dataset is not None and len(train_dataset) > 0 and val_ratio > 0.0:
+                val_size = int(len(train_dataset) * val_ratio / (train_ratio + 1e-8))
+                val_size = max(1, val_size) if len(train_dataset) > 1 else 0
+                if val_size > 0 and val_size < len(train_dataset):
+                    train_size = len(train_dataset) - val_size
+                    generator = None
+                    if seed is not None:
+                        generator = torch.Generator().manual_seed(seed)
+                    train_dataset, val_dataset = torch.utils.data.random_split(
+                        train_dataset, [train_size, val_size], generator=generator
+                    )
             
             print('Using fixed split from CSV files:')
             if train_dataset:
                 print(f'Train size: {len(train_dataset)}')
+            if val_dataset:
+                print(f'Val size: {len(val_dataset)}')
             print(f'Test size: {len(test_dataset)}')
             
             # 创建 DataLoader
@@ -120,42 +147,101 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
                 collate_fn=collate_fn,
                 drop_last=True
             ) if train_dataset else None
-            test_loader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                collate_fn=collate_fn
+            ) if val_dataset is not None else None
+            test_loader = DataLoader(
+                test_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                collate_fn=collate_fn
+            )
             
-            return train_loader, test_loader
+            return train_loader, val_loader, test_loader
             
         except FileNotFoundError as e:
             print(f'Warning: Split CSV files not found ({e}), using random split')
             use_smiles_split = False
 
-    # 原始随机划分逻辑
-    train_size = int(train_ratio * len(dataset))
-    test_size = len(dataset) - train_size
-    if train_ratio > 0.0:
-        print('Cleaned Dataset: ')
-        print('Total size: ', len(dataset))
-        print('Train size: ', train_size)
-        print('Test size: ', test_size)
-    else:
+    # 原始随机划分逻辑：支持 train/val/test（默认 8:1:1），并按 label 分层采样
+    total_size = len(dataset)
+    if train_ratio <= 0.0 or label is None:
+        # 没有训练集或没有标签信息时，退化为只有测试集
         print('Test Dataset: ')
-        print('Total size: ', len(dataset))
-
-    if train_size == 0:
+        print('Total size: ', total_size)
         test_loader = DataLoader(dataset, batch_size=batch_size, collate_fn=collate_fn)
-        return None, test_loader
+        return None, None, test_loader
 
-    # 使用 seed 创建 generator 以确保可复现性
-    generator = None
-    if seed is not None:
-        generator = torch.Generator().manual_seed(seed)
-    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size], generator=generator)
+    # 第一步：先从全数据中分出「临时集」：如 80% 训练 + 20% 临时，使用 stratify 保证分层
+    indices = list(range(total_size))
+    # label.pt 一般是 tensor，这里统一转成一维 numpy 数组 / list
+    if isinstance(label, torch.Tensor):
+        all_labels = label.cpu().numpy()
+    else:
+        all_labels = torch.tensor(label).cpu().numpy()
 
-    # Drop overlapping data in test set from train set
+    temp_ratio = 1.0 - train_ratio
+    if temp_ratio <= 0:
+        # 没有临时集，直接全部作为训练集
+        train_indices = indices
+        temp_indices = []
+        y_train = all_labels
+        y_temp = []
+    else:
+        train_indices, temp_indices, y_train, y_temp = train_test_split(
+            indices,
+            all_labels,
+            test_size=temp_ratio,
+            stratify=all_labels,
+            random_state=seed
+        )
+
+    # 第二步：再把这 20% 临时集按 1:1（或根据 val_ratio）划成验证和测试，同样分层
+    if temp_indices:
+        # 目标：val 占全体的 val_ratio，其余作为 test
+        # 在临时集中的相对比例：
+        relative_val_ratio = val_ratio / max(temp_ratio, 1e-8)
+        # 防止数值问题，限制到 (0,1) 内
+        relative_val_ratio = max(0.0, min(1.0, relative_val_ratio))
+        relative_test_ratio = 1.0 - relative_val_ratio
+
+        if relative_val_ratio == 0.0:
+            val_indices = []
+            test_indices = temp_indices
+        elif relative_test_ratio == 0.0:
+            val_indices = temp_indices
+            test_indices = []
+        else:
+            val_indices, test_indices, y_val, y_test = train_test_split(
+                temp_indices,
+                y_temp,
+                test_size=relative_test_ratio,
+                stratify=y_temp,
+                random_state=seed
+            )
+    else:
+        val_indices, test_indices = [], []
+
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices) if len(val_indices) > 0 else []
+    test_dataset = Subset(dataset, test_indices) if len(test_indices) > 0 else []
+
+    print('Cleaned Dataset with stratified split: ')
+    print('Total size: ', total_size)
+    print('Train size: ', len(train_dataset))
+    print('Val size: ', len(val_dataset))
+    print('Test size: ', len(test_dataset))
+
+    # Drop overlapping data in test set from train set（按 SMILES+POI 去重）
     train_keys = {_sample_key(data) for data in train_dataset}
     test_dataset = [data for data in test_dataset if _sample_key(data) not in train_keys]
-
-    print('Dropped overlapping:')
+    
+    print('Dropped overlapping (from test vs train):')
     print('Train size: ', len(train_dataset))
+    print('Val size: ', len(val_dataset))
     print('Test size: ', len(test_dataset))
 
     # 保存划分结果到CSV文件
@@ -169,12 +255,14 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
                 # 确保有Smiles列（注意大小写）
                 smiles_col = 'Smiles' if 'Smiles' in raw_df.columns else 'SMILES'
                 
-                # 收集train和test的SMILES
+                # 收集 train / val / test 的 SMILES
                 train_smiles_list = [data['protac'].smiles for data in train_dataset]
+                val_smiles_list = [data['protac'].smiles for data in val_dataset]
                 test_smiles_list = [data['protac'].smiles for data in test_dataset]
                 
                 # 从原始CSV中匹配并提取数据
                 train_df = raw_df[raw_df[smiles_col].isin(train_smiles_list)].copy()
+                val_df = raw_df[raw_df[smiles_col].isin(val_smiles_list)].copy()
                 test_df = raw_df[raw_df[smiles_col].isin(test_smiles_list)].copy()
                 
                 # 如果原始CSV有Compound ID，使用它；否则只保存SMILES
@@ -184,6 +272,12 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
                 else:
                     train_save_df = pd.DataFrame({'SMILES': train_smiles_list})
                 
+                if 'Compound ID' in val_df.columns:
+                    val_save_df = val_df[['Compound ID', smiles_col]].copy()
+                    val_save_df.columns = ['Compound ID', 'SMILES']
+                else:
+                    val_save_df = pd.DataFrame({'SMILES': val_smiles_list})
+                
                 if 'Compound ID' in test_df.columns:
                     test_save_df = test_df[['Compound ID', smiles_col]].copy()
                     test_save_df.columns = ['Compound ID', 'SMILES']
@@ -192,24 +286,32 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
                 
                 # 保存CSV文件
                 train_csv_path = f'{root}/train_compound_smiles.csv'
+                val_csv_path = f'{root}/val_compound_smiles.csv'
                 test_csv_path = f'{root}/test_compound_smiles.csv'
                 train_save_df.to_csv(train_csv_path, index=False)
+                val_save_df.to_csv(val_csv_path, index=False)
                 test_save_df.to_csv(test_csv_path, index=False)
                 print(f'Saved train split to {train_csv_path}')
+                print(f'Saved val split to {val_csv_path}')
                 print(f'Saved test split to {test_csv_path}')
             else:
                 # 如果原始CSV不存在，只保存SMILES
                 train_smiles_list = [data['protac'].smiles for data in train_dataset]
+                val_smiles_list = [data['protac'].smiles for data in val_dataset]
                 test_smiles_list = [data['protac'].smiles for data in test_dataset]
                 
                 train_save_df = pd.DataFrame({'SMILES': train_smiles_list})
+                val_save_df = pd.DataFrame({'SMILES': val_smiles_list})
                 test_save_df = pd.DataFrame({'SMILES': test_smiles_list})
                 
                 train_csv_path = f'{root}/train_compound_smiles.csv'
+                val_csv_path = f'{root}/val_compound_smiles.csv'
                 test_csv_path = f'{root}/test_compound_smiles.csv'
                 train_save_df.to_csv(train_csv_path, index=False)
+                val_save_df.to_csv(val_csv_path, index=False)
                 test_save_df.to_csv(test_csv_path, index=False)
                 print(f'Saved train split to {train_csv_path}')
+                print(f'Saved val split to {val_csv_path}')
                 print(f'Saved test split to {test_csv_path}')
         except Exception as e:
             print(f'Warning: Failed to save split CSV files: {e}')
@@ -222,18 +324,35 @@ def PROTACLoader(root='data/PROTAC-fine', name='protac-fine', batch_size=2, coll
         collate_fn=collate_fn,
         drop_last=True
     )
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, collate_fn=collate_fn)
-
-    return train_loader, test_loader
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_fn
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_fn
+    )
+    
+    return train_loader, val_loader, test_loader
 
 
 if __name__ == '__main__':
-    train_loader, test_loader = PROTACLoader()
+    train_loader, val_loader, test_loader = PROTACLoader()
 
-    for item in train_loader:
-        print(item)
-        break
+    if train_loader is not None:
+        for item in train_loader:
+            print('Train batch example:', item)
+            break
+    
+    if val_loader is not None:
+        for item in val_loader:
+            print('Val batch example:', item)
+            break
     
     for item in test_loader:
-        print(item)
+        print('Test batch example:', item)
         break

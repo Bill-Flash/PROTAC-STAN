@@ -31,3 +31,4 @@ learning_rate = 0.0005
 batch_size = 64
 num_epochs = 100
 train_ratio = 0.8
+val_ratio = 0.1  # 新增验证集比例，对应 8:1:1 划分中的“1”
