@@ -138,9 +138,9 @@ class MolecularEncoder(nn.Module):
         x = self.lin(x)
         x = self.bn(x)
         x = F.relu(x)
-        x = self.conv1(x, edge_index)
+        x = self.conv1(x, edge_index, edge_attr)
         x = F.relu(x)
-        x = self.conv2(x, edge_index)
+        x = self.conv2(x, edge_index, edge_attr)
         x = global_max_pool(x, batch)
         
         return x
