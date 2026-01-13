@@ -1,6 +1,7 @@
 import pandas as pd
 import re
 import requests
+import math
 
 # 1. 加载原始数据
 df = pd.read_csv('data/TPDdb/PROTAC_activity.txt', sep='\t')
@@ -259,6 +260,117 @@ rename_map = {
     "SMILES": "Smiles",
 }
 clean_df = clean_df.rename(columns=rename_map)
+
+# ========= 从逐实验记录中提取 DC50_nM 和 Dmax_pct =========
+
+def extract_metrics(row):
+    """
+    基于 Activity Type + Activity，从原始字符串中拆出标准化数值：
+    - DC50 / IC50 / EC50 等：统一转为 nM，记到 dc50_nM
+    - Dmax / % Degradation 等：按百分比记到 dmax_pct
+    """
+    act_type = str(row.get("Activity Type", "")).lower()
+    val = row.get("Activity")
+    if pd.isna(val):
+        return (None, None)
+
+    num, unit, op = get_num(val)
+    if num is None:
+        return (None, None)
+
+    # 统一浓度单位到 nM
+    if unit == "uM":
+        num *= 1000.0
+
+    dc50 = None
+    dmax = None
+
+    # 浓度类指标 -> DC50-like
+    if any(k in act_type for k in ["dc50", "ic50", "gi50", "ec50"]):
+        dc50 = num
+    # 降解深度 / 百分比 -> Dmax-like
+    elif ("dmax" in act_type) or ("degradation" in act_type) or (unit == "%"):
+        dmax = num
+
+    return (dc50, dmax)
+
+
+clean_df["dc50_nM"], clean_df["dmax_pct"] = zip(
+    *clean_df.apply(extract_metrics, axis=1)
+)
+
+
+# ========= 定义 DC50 几何平均 + Dmax 算术平均 =========
+
+def geom_mean(series):
+    vals = [v for v in series if pd.notna(v) and v is not None and v > 0]
+    if not vals:
+        return None
+    log_sum = sum(math.log(v) for v in vals)
+    return math.exp(log_sum / len(vals))
+
+
+def arith_mean(series):
+    vals = [v for v in series if pd.notna(v) and v is not None]
+    if not vals:
+        return None
+    return float(sum(vals) / len(vals))
+
+
+# ========= 按 (Smiles, Uniprot, E3 ligase Uniprot, Cell Line) 分组聚合 =========
+
+group_cols = ["Smiles", "Uniprot", "E3 ligase Uniprot", "Cell Line"]
+
+grouped = (
+    clean_df
+    .groupby(group_cols)
+    .agg(
+        dc50_gm=("dc50_nM", geom_mean),
+        dmax_avg=("dmax_pct", arith_mean),
+        # 也保留原来的 label 信息，用于兜底
+        label_max=("label", "max"),   # 组内是否曾经出现过 1
+        label_min=("label", "min"),   # 组内是否曾经出现过 0
+        n_exp=("label", "size"),      # 该组原始实验条数
+    )
+    .reset_index()
+)
+
+
+# ========= 基于聚合后的数值给每个 (Smiles, POI, E3, Cell Line) 打一个最终 label =========
+
+def label_from_agg(row):
+    """
+    一种简单的组级 label 规则（可按需要调整）：
+    - 若几何平均 DC50_gm 存在且 <= 100 nM -> Active (1)
+    - 否则，若 Dmax_avg 存在且 >= 80% -> Active (1)
+    - 否则，兜底用组内原始 label：只要出现过 0 就算 0，否则 1
+    """
+    dc50 = row["dc50_gm"]
+    dmax = row["dmax_avg"]
+
+    if dc50 is not None and not pd.isna(dc50):
+        if dc50 <= 100.0:
+            return 1
+
+    if dmax is not None and not pd.isna(dmax):
+        if dmax >= 80.0:
+            return 1
+
+    # 兜底：只要组内有过 0，就算 Inactive；否则 Active
+    if row["label_min"] == 0:
+        return 0
+    return 1
+
+
+grouped["label"] = grouped.apply(label_from_agg, axis=1)
+
+print("====== 聚合统计（按 Smiles + Uniprot + E3 ligase Uniprot + Cell Line）======")
+print("原始逐实验条数: ", len(clean_df))
+print("聚合后条数（每组一个代表条目）: ", len(grouped))
+
+# 后续流程统一使用聚合后的 DataFrame（去掉中间统计列）
+cols_to_drop = ["dc50_gm", "dmax_avg", "label_max", "label_min", "n_exp"]
+clean_df = grouped.drop(columns=cols_to_drop, errors="ignore")
 
 # 保存文件：输出已经拆分好 Target ID 的版本
 clean_df.to_csv("data/TPDdb/protac_label_with_main.csv", index=False)
