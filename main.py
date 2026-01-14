@@ -89,10 +89,20 @@ def train(model, train_loader, val_loader, test_loader, device, lr=0.001, num_ep
             e3_ligase_data = data['e3_ligase'].to(device)
             poi_data = data['poi'].to(device)
             label = data['label'].to(device)
+<<<<<<< HEAD
+            fingerprint = data.get('fingerprint', None)
+            if fingerprint is not None:
+                fingerprint = fingerprint.to(device)
+            
+            optimizer.zero_grad()
+            
+            outputs = model(protac_data, e3_ligase_data, poi_data, fingerprint=fingerprint)
+=======
 
             optimizer.zero_grad()
 
             outputs = model(protac_data, e3_ligase_data, poi_data)
+>>>>>>> 27a96b2 (Apply changes to baseline branch)
             loss = criterion(outputs, label)
             loss.backward()
             optimizer.step()
