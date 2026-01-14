@@ -131,9 +131,10 @@ class MolecularEncoder(nn.Module):
         super(MolecularEncoder, self).__init__()
         self.lin = nn.Linear(num_mol_features, embedding_dim)
         self.bn = nn.BatchNorm1d(embedding_dim)
-        # 原始 GIN：只使用节点特征，不使用边特征
-        self.conv1 = GINConv(nn.Sequential(nn.Linear(embedding_dim, hidden_channels), nn.ReLU(), nn.Dropout(dropout), nn.Linear(hidden_channels, hidden_channels)))
-        self.conv2 = GINConv(nn.Sequential(nn.Linear(hidden_channels, embedding_dim), nn.ReLU(), nn.Dropout(dropout), nn.Linear(embedding_dim, embedding_dim)))
+        self.dropout = dropout
+        # 使用带边特征的 EdgedGCNConv
+        self.conv1 = EdgedGCNConv(embedding_dim, hidden_channels, edge_dim)
+        self.conv2 = EdgedGCNConv(hidden_channels, embedding_dim, edge_dim)
         self.fingerprint_lin = nn.Linear(fingerprint_dim, embedding_dim)
 
     def forward(self, data, fingerprint=None):
@@ -141,9 +142,11 @@ class MolecularEncoder(nn.Module):
         x = self.lin(x)
         x = self.bn(x)
         x = F.relu(x)
-        x = self.conv1(x, edge_index)
+        x = self.conv1(x, edge_index, edge_attr)
         x = F.relu(x)
-        x = self.conv2(x, edge_index)
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.conv2(x, edge_index, edge_attr)
+        x = F.relu(x)
         x = global_max_pool(x, batch)
         
         if fingerprint is not None:
