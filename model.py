@@ -12,11 +12,13 @@ class PROTAC_STAN(nn.Module):
     ## TODO: 微调ESM小模型
     def __init__(self, cfg):
         super(PROTAC_STAN, self).__init__()
+        fingerprint_dim = cfg['protac'].get('fingerprint_dim', 166)
         self.protac_encoder = MolecularEncoder(
             num_mol_features=cfg['protac']['feature'], 
             embedding_dim=cfg['protac']['embed'],
             hidden_channels=cfg['protac']['hidden'], 
-            edge_dim=cfg['protac']['edge_dim']
+            edge_dim=cfg['protac']['edge_dim'],
+            fingerprint_dim=fingerprint_dim  # MACCS指纹维度（从配置读取，默认166）
         )
         self.e3_ligase_encoder = ProteinEncoder(
             embedding_dim=cfg['protein']['embed'],
@@ -37,8 +39,8 @@ class PROTAC_STAN(nn.Module):
             nn.Linear(cfg['clf']['hidden'], cfg['clf']['class']),
         )
 
-    def forward(self, protac, e3_ligase, poi, mode='train'):
-        protac_embedding = self.protac_encoder(protac)
+    def forward(self, protac, e3_ligase, poi, mode='train', fingerprint=None):
+        protac_embedding = self.protac_encoder(protac, fingerprint=fingerprint)
         e3_ligase_embedding = self.e3_ligase_encoder(e3_ligase)
         poi_embedding = self.poi_encoder(poi)
         
@@ -125,15 +127,16 @@ class EdgedGINConv(MessagePassing):
 
 
 class MolecularEncoder(nn.Module):
-    ## TODO: 需要修改，使用GINConv代替EdgedGCNConv
-    def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim):
+    def __init__(self, num_mol_features, embedding_dim, hidden_channels, edge_dim, fingerprint_dim=166, dropout=0.1):
         super(MolecularEncoder, self).__init__()
         self.lin = nn.Linear(num_mol_features, embedding_dim)
         self.bn = nn.BatchNorm1d(embedding_dim)
-        self.conv1 = EdgedGCNConv(embedding_dim, hidden_channels, edge_dim)
-        self.conv2 = EdgedGCNConv(hidden_channels, embedding_dim, edge_dim)
+        # 原始 GIN：只使用节点特征，不使用边特征
+        self.conv1 = GINConv(nn.Sequential(nn.Linear(embedding_dim, hidden_channels), nn.ReLU(), nn.Dropout(dropout), nn.Linear(hidden_channels, hidden_channels)))
+        self.conv2 = GINConv(nn.Sequential(nn.Linear(hidden_channels, embedding_dim), nn.ReLU(), nn.Dropout(dropout), nn.Linear(embedding_dim, embedding_dim)))
+        self.fingerprint_lin = nn.Linear(fingerprint_dim, embedding_dim)
 
-    def forward(self, data):
+    def forward(self, data, fingerprint=None):
         x, edge_index, edge_attr, batch = data.x, data.edge_index, data.edge_attr, data.batch
         x = self.lin(x)
         x = self.bn(x)
@@ -142,6 +145,9 @@ class MolecularEncoder(nn.Module):
         x = F.relu(x)
         x = self.conv2(x, edge_index)
         x = global_max_pool(x, batch)
+        
+        if fingerprint is not None:
+            x = x + self.fingerprint_lin(fingerprint)
         
         return x
 
