@@ -138,6 +138,20 @@ def PROTACLoader(
             if val_dataset:
                 print(f'Val size: {len(val_dataset)}')
             print(f'Test size: {len(test_dataset)}')
+
+            # 去重：确保验证集和测试集都不包含训练集中已出现的样本
+            if train_dataset:
+                train_keys = {_sample_key(data) for data in train_dataset}
+                if val_dataset is not None:
+                    val_dataset = [data for data in val_dataset if _sample_key(data) not in train_keys]
+                test_dataset = [data for data in test_dataset if _sample_key(data) not in train_keys]
+
+            print('After dedup with train (SMILES split):')
+            if train_dataset:
+                print(f'Train size: {len(train_dataset)}')
+            if val_dataset is not None:
+                print(f'Val size: {len(val_dataset)}')
+            print(f'Test size: {len(test_dataset)}')
             
             # 创建 DataLoader
             # 训练集使用 drop_last=True，避免出现 batch_size=1 导致 BatchNorm 报错
@@ -153,7 +167,7 @@ def PROTACLoader(
                 batch_size=batch_size,
                 shuffle=False,
                 collate_fn=collate_fn
-            ) if val_dataset is not None else None
+            ) if val_dataset is not None and len(val_dataset) > 0 else None
             test_loader = DataLoader(
                 test_dataset,
                 batch_size=batch_size,
