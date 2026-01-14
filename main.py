@@ -44,11 +44,8 @@ def test(model, test_loader, device):
             e3_ligase_data = data['e3_ligase'].to(device)
             poi_data = data['poi'].to(device)
             label = data['label'].to(device)
-            fingerprint = data.get('fingerprint', None)
-            if fingerprint is not None:
-                fingerprint = fingerprint.to(device)
 
-            outputs = model(protac_data, e3_ligase_data, poi_data, fingerprint=fingerprint)
+            outputs = model(protac_data, e3_ligase_data, poi_data)
             _, predicted = torch.max(outputs.data, dim=1)
 
             loss = criterion(outputs, label)
@@ -92,13 +89,10 @@ def train(model, train_loader, val_loader, test_loader, device, lr=0.001, num_ep
             e3_ligase_data = data['e3_ligase'].to(device)
             poi_data = data['poi'].to(device)
             label = data['label'].to(device)
-            fingerprint = data.get('fingerprint', None)
-            if fingerprint is not None:
-                fingerprint = fingerprint.to(device)
-            
+
             optimizer.zero_grad()
-            
-            outputs = model(protac_data, e3_ligase_data, poi_data, fingerprint=fingerprint)
+
+            outputs = model(protac_data, e3_ligase_data, poi_data)
             loss = criterion(outputs, label)
             loss.backward()
             optimizer.step()

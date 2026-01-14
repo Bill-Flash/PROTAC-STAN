@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 from torch_geometric.data import Batch
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 
 from data import PROTACData
@@ -15,13 +16,6 @@ def collate_fn(data_list):
     label = [item['label'] for item in data_list]
 
     batch['protac'] =  Batch.from_data_list(protac)
-    # 从batch中提取MACCS指纹特征
-    if hasattr(protac[0], 'fingerprint'):
-        fingerprint_list = [item.fingerprint for item in protac]
-        batch['fingerprint'] = torch.stack(fingerprint_list).squeeze(1)  # [batch_size, 166]
-    else:
-        batch['fingerprint'] = None
-    
     batch['e3_ligase'] = torch.stack(e3_ligase)
     batch['poi'] = torch.stack(poi)
     batch['label'] = torch.stack(label) if label[0] is not None else None
@@ -130,8 +124,15 @@ def PROTACLoader(
                     train_dataset, val_dataset = torch.utils.data.random_split(
                         train_dataset, [train_size, val_size], generator=generator
                     )
+
+            # 按 SMILES+POI 去重：确保验证集/测试集中不包含训练集中已出现的样本
+            if train_dataset is not None:
+                train_keys = {_sample_key(data) for data in train_dataset}
+                if val_dataset is not None:
+                    val_dataset = [data for data in val_dataset if _sample_key(data) not in train_keys]
+                test_dataset = [data for data in test_dataset if _sample_key(data) not in train_keys]
             
-            print('Using fixed split from CSV files (before dedup):')
+            print('Using fixed split from CSV files (after de-dup w.r.t. train):')
             if train_dataset:
                 print(f'Train size: {len(train_dataset)}')
             if val_dataset:
@@ -239,25 +240,134 @@ def PROTACLoader(
     else:
         val_indices, test_indices = [], []
 
-    train_dataset = Subset(dataset, train_indices)
-    val_dataset = Subset(dataset, val_indices) if len(val_indices) > 0 else []
-    test_dataset = Subset(dataset, test_indices) if len(test_indices) > 0 else []
+    # ========== 第三步：按 SMILES+POI 去重，并把重复样本从 val/test 移回 train ==========
+    # 为当前 train 构建 key 集合
+    train_keys = set()
+    for idx in train_indices:
+        sample = dataset[idx]
+        train_keys.add(_sample_key(sample))
 
-    print('Cleaned Dataset with stratified split (before dedup): ')
+    overlap_val = []
+    overlap_test = []
+    val_clean_indices = []
+    test_clean_indices = []
+
+    # 找到 val 中与 train 重复的样本
+    for idx in val_indices:
+        key = _sample_key(dataset[idx])
+        if key in train_keys:
+            overlap_val.append(idx)
+        else:
+            val_clean_indices.append(idx)
+
+    # 找到 test 中与 train 重复的样本
+    for idx in test_indices:
+        key = _sample_key(dataset[idx])
+        if key in train_keys:
+            overlap_test.append(idx)
+        else:
+            test_clean_indices.append(idx)
+
+    # 把重复样本并回 train
+    train_indices_extended = train_indices + overlap_val + overlap_test
+
+    print('Cleaned Dataset with stratified split (before rebalancing): ')
     print('Total size: ', total_size)
-    print('Train size: ', len(train_dataset))
-    print('Val size: ', len(val_dataset))
-    print('Test size: ', len(test_dataset))
+    print('Train size: ', len(train_indices_extended))
+    print('Val size: ', len(val_clean_indices))
+    print('Test size: ', len(test_clean_indices))
 
-    # 按 SMILES+POI 去重：确保验证集和测试集都不包含训练集中已出现的样本
-    train_keys = {_sample_key(data) for data in train_dataset}
-    val_dataset = [data for data in val_dataset if _sample_key(data) not in train_keys]
-    test_dataset = [data for data in test_dataset if _sample_key(data) not in train_keys]
-    
-    print('After dedup with train (stratified split):')
-    print('Train size: ', len(train_dataset))
-    print('Val size: ', len(val_dataset))
-    print('Test size: ', len(test_dataset))
+    # ========== 第四步：从 train 中按 label 分层抽样，补足 val/test 至至少 target_size ==========
+    target_size = 1000
+    current_val = len(val_clean_indices)
+    current_test = len(test_clean_indices)
+
+    need_val = max(0, target_size - current_val)
+    need_test = max(0, target_size - current_test)
+
+    # 可用的 train 池
+    train_pool_indices = train_indices_extended
+    total_need = need_val + need_test
+
+    # 如果 train 数量不足以完全满足需求，按比例缩放抽样数量
+    if total_need > 0 and len(train_pool_indices) < total_need:
+        scale = len(train_pool_indices) / float(total_need)
+        alloc_val = int(round(need_val * scale))
+        alloc_test = len(train_pool_indices) - alloc_val
+    else:
+        alloc_val = need_val
+        alloc_test = need_test
+
+    def stratified_sample(indices, y_all, n_samples, seed=None):
+        """
+        从给定 indices 中按 label 分层抽样 n_samples 条，
+        返回 (剩余 indices, 抽出的 indices)。
+        """
+        if n_samples <= 0 or len(indices) == 0:
+            return indices, []
+
+        indices_array = np.array(indices)
+        y_subset = y_all[indices_array]
+
+        if n_samples >= len(indices_array):
+            # 需要数量大于等于池子大小，直接全部拿走
+            return [], list(indices_array)
+
+        try:
+            # 使用 sklearn 的 train_test_split 进行分层抽样
+            from sklearn.model_selection import train_test_split as _tts
+
+            remain_idx, sample_idx = _tts(
+                indices_array,
+                test_size=n_samples,
+                stratify=y_subset,
+                random_state=seed
+            )
+            return list(remain_idx), list(sample_idx)
+        except ValueError as e:
+            # 极端情况下某些 label 样本过少时，分层可能失败，退化为随机抽样
+            print(f'Warning: stratified sampling failed ({e}), fallback to random sampling.')
+            import random
+            rng = random.Random(seed)
+            sampled = rng.sample(list(indices_array), n_samples)
+            remain = [idx for idx in indices_array if idx not in sampled]
+            return remain, sampled
+
+    # 先从 train 中补 val
+    final_train_indices = train_pool_indices
+    val_additional = []
+    if alloc_val > 0:
+        final_train_indices, val_additional = stratified_sample(
+            final_train_indices,
+            all_labels,
+            alloc_val,
+            seed=seed
+        )
+
+    # 再从更新后的 train 中补 test
+    test_additional = []
+    if alloc_test > 0:
+        # 为了避免和 val 使用完全相同的随机划分，简单地对 seed 做一个偏移
+        test_seed = None if seed is None else seed + 1
+        final_train_indices, test_additional = stratified_sample(
+            final_train_indices,
+            all_labels,
+            alloc_test,
+            seed=test_seed
+        )
+
+    final_val_indices = val_clean_indices + val_additional
+    final_test_indices = test_clean_indices + test_additional
+
+    print('Final split after de-dup and rebalancing:')
+    print('Train size: ', len(final_train_indices))
+    print('Val size: ', len(final_val_indices))
+    print('Test size: ', len(final_test_indices))
+
+    # 根据最终索引构建 Subset
+    train_dataset = Subset(dataset, final_train_indices)
+    val_dataset = Subset(dataset, final_val_indices) if len(final_val_indices) > 0 else []
+    test_dataset = Subset(dataset, final_test_indices) if len(final_test_indices) > 0 else []
 
     # 保存划分结果到CSV文件
     if save_split_csv:
